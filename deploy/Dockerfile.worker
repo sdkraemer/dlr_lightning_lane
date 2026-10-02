@@ -1,0 +1,10 @@
+FROM node:24-bookworm-slim
+WORKDIR /app
+COPY package.json ./
+COPY packages ./packages
+COPY scripts ./scripts
+COPY apps/worker ./apps/worker
+RUN mkdir /data && chown node:node /data
+USER node
+ENV DATABASE_PATH=/data/lightning-lane.sqlite
+CMD ["node", "apps/worker/src/main.ts"]

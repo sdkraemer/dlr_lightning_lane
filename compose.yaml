@@ -1,0 +1,21 @@
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.worker
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_PATH: /data/lightning-lane.sqlite
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-120}
+      MONITORING_ENABLED: ${MONITORING_ENABLED:-true}
+    volumes:
+      - sqlite-data:/data
+    mem_limit: 192m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+volumes:
+  sqlite-data:
