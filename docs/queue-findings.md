@@ -22,6 +22,7 @@ This single sample confirms DCA exposes the field, but does not demonstrate an
 available DCA window. Repeat during ordinary operating hours with an active watch.
 
 Sources:
+
 - https://api.themeparks.wiki/v1/entity/7340550b-c14d-4def-80bb-acdb51d49a66/live
 - https://api.themeparks.wiki/v1/entity/832fcd51-ea19-4e77-85c7-75d5843b127c/live
 - https://github.com/ThemeParks/ThemeParks_JavaScript (queue field documentation)

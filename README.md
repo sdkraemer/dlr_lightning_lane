@@ -31,7 +31,7 @@ fails closed until configured. Never commit .env.
 
 - Mobile dashboard; add/edit today's reserved window and optional target start range.
 - Pause, resume, complete, and restore today's bookings.
-- Auth0 Universal Login integration with a single permitted subject.
+- Auth0 Universal Login with open signup and private per-user bookings and notifications.
 - Both-park polling only while a same-Pacific-day booking still needs its target.
 - SQLite history for all returned attractions/queue types, with versioned migrations.
 - Separate RETURN_TIME / PAID_RETURN_TIME storage; Multi Pass watches use RETURN_TIME.
@@ -67,22 +67,42 @@ No authenticated API/page data is cached offline.
 
 ## Commands
 
-| Command | Purpose |
-| --- | --- |
-| npm run dev:mock | Local dashboard without an Auth0 tenant |
-| npm run dev | Local dashboard using configured Auth0 |
-| npm run worker | Background polling, evaluation and push delivery |
-| npm run probe | One cycle, subject to watch gating |
-| npm run probe -- --diagnostic | One-time catalog/feed inspection |
-| npm run db:backup | SQLite online backup into ignored data/backups |
-| npm test | Domain, persistence and migration tests |
-| npm run typecheck | TypeScript validation |
-| npm run build | Production Next.js build (no credentials required) |
-| npm start | Local production server; mock identity prohibited |
+| Command                       | Purpose                                            |
+| ----------------------------- | -------------------------------------------------- |
+| npm run dev:mock              | Local dashboard without an Auth0 tenant            |
+| npm run dev                   | Local dashboard using configured Auth0             |
+| npm run worker                | Background polling, evaluation and push delivery   |
+| npm run probe                 | One cycle, subject to watch gating                 |
+| npm run probe -- --diagnostic | One-time catalog/feed inspection                   |
+| npm run db:backup             | SQLite online backup into ignored data/backups     |
+| npm test                      | Domain, persistence and migration tests            |
+| npm run typecheck             | TypeScript validation                              |
+| npm run build                 | Production Next.js build (no credentials required) |
+| npm start                     | Local production server; mock identity prohibited  |
 
 Browser test: use a fresh isolated DATABASE_PATH, run
 `node scripts/seed-browser-test.ts`, start `npm run dev:mock` with that same path,
-then `npm run test:browser`. Requires Microsoft Edge. The fixtures are test-only
+then `npm run test:browser`. Requires Microsoft Edge. Set BROWSER_BASE_URL when
+using a port other than 3000. To check cross-user API isolation, run
+`node scripts/browser-users-check.mjs` with the same isolated DATABASE_PATH and
+BROWSER_BASE_URL. The fixtures are test-only
 and should not be seeded into your personal database.
 
 See [architecture](docs/architecture.md) and [deployment](docs/deployment.md).
+
+## User accounts
+
+Anyone who signs in through the configured Auth0 application can use the app. Enable
+your login connection for the application and turn off **Disable Sign Ups** in the
+Auth0 database connection settings to allow email/password registration. The login
+page includes a Create account link. Each account has private bookings and devices.
+
+AUTH0_ALLOWED_SUB is optional and used only to assign legacy, unowned data to its
+original owner. Set it to that owner’s exact Auth0 User ID before upgrading if you
+need to retain existing bookings. Without it, legacy data stays unassigned and is
+excluded from dashboards and monitoring. It is never claimed by the first signup.
+Once assigned, changing this variable does not transfer existing data.
+
+On a shared browser, notifications remain active after sign-out. Enabling them under
+a different account replaces the browser subscription; the old account’s device
+record is never transferred. Use Disable this device before handing over a browser.

@@ -30,7 +30,7 @@ CREATE TABLE bookings (
     CHECK(watch_state IN ('waiting','watch','reached','paused','completed')),
   revision INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL, user_id INTEGER REFERENCES users(id),
   CHECK((target_earliest_start IS NULL AND target_latest_start IS NULL) OR
     (target_earliest_start IS NOT NULL AND target_latest_start IS NOT NULL
       AND target_latest_start >= target_earliest_start)),
@@ -86,7 +86,7 @@ CREATE TABLE push_subscriptions (
   auth TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   disabled_at INTEGER
-) STRICT;
+, user_id INTEGER REFERENCES users(id)) STRICT;
 
 CREATE TABLE push_deliveries (
   event_id INTEGER NOT NULL REFERENCES alert_events(id),
@@ -109,6 +109,16 @@ CREATE TABLE worker_state (
           heartbeat_at INTEGER NOT NULL
         ) STRICT;
 
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  auth0_sub TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
+) STRICT;
+
 CREATE INDEX observations_history ON observations(attraction_id,observed_at);
 
 CREATE INDEX bookings_active ON bookings(visit_date,watch_state);
+
+CREATE INDEX bookings_user_date ON bookings(user_id,visit_date);
+
+CREATE INDEX subscriptions_user ON push_subscriptions(user_id);

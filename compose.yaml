@@ -13,7 +13,7 @@ services:
       AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID}
       AUTH0_CLIENT_SECRET: ${AUTH0_CLIENT_SECRET}
       AUTH0_SECRET: ${AUTH0_SECRET}
-      AUTH0_ALLOWED_SUB: ${AUTH0_ALLOWED_SUB}
+      AUTH0_ALLOWED_SUB: ${AUTH0_ALLOWED_SUB:-}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${VAPID_SUBJECT}
@@ -25,7 +25,7 @@ services:
       driver: json-file
       options:
         max-size: 10m
-        max-file: "3"
+        max-file: '3'
   worker:
     image: dlr-worker:${IMAGE_TAG:-local}
     build:
@@ -50,8 +50,8 @@ services:
     environment:
       APP_DOMAIN: ${APP_DOMAIN}
     ports:
-      - "80:80"
-      - "443:443"
+      - '80:80'
+      - '443:443'
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

@@ -42,8 +42,13 @@ Caddy persists certificates in its own volume.
 One Regular Web Application with Universal Login. Configure the exact production
 /auth/callback URL and root logout URL; local development uses
 http://localhost:3000/auth/callback and http://localhost:3000.
-AUTH0_ALLOWED_SUB must match your user identity. An authenticated different user
-receives no data. No local passwords or Auth0 credentials in the worker.
+Anyone authenticated through this application can access their own data. Enable
+the desired connection under the application’s Connections tab. For email/password
+signup, turn off Disable Sign Ups in the database connection settings.
+AUTH0_ALLOWED_SUB is optional and only assigns unowned legacy records to their
+original owner; it is no longer an access restriction. Set it before upgrading to
+preserve access to existing data. Without it, old records remain quarantined.
+No local passwords or Auth0 credentials in the worker.
 
 The Docker web entrypoint requires all Auth0 settings and HTTPS at runtime.
 The build itself accepts empty configuration. DEV_MOCK_AUTH is never passed
@@ -73,7 +78,7 @@ are occurring. For example, run scripts/backup-db.ts in the worker container and
 copy the reported backup path out with docker cp. Encrypt and retain off-droplet
 copies. Test a restore into a separate volume before relying on the backup.
 
-Check login/logout, wrong-user denial, phone PWA install, test notification,
+Check login/logout, two-account data isolation, phone PWA install, test notification,
 approaching/reached alerts, suppression after editing, process restart, data
 persistence, midnight rollover and memory use. A push-service acceptance does not
 guarantee device display. Notifications already in flight cannot be recalled.
