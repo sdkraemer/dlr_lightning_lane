@@ -1,5 +1,33 @@
 services:
+  web:
+    image: dlr-web:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_PATH: /data/lightning-lane.sqlite
+      APP_BASE_URL: ${APP_BASE_URL}
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN}
+      AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID}
+      AUTH0_CLIENT_SECRET: ${AUTH0_CLIENT_SECRET}
+      AUTH0_SECRET: ${AUTH0_SECRET}
+      AUTH0_ALLOWED_SUB: ${AUTH0_ALLOWED_SUB}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
+      MONITORING_ENABLED: ${MONITORING_ENABLED:-true}
+    volumes:
+      - sqlite-data:/data
+    mem_limit: 384m
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
   worker:
+    image: dlr-worker:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: deploy/Dockerfile.worker
@@ -9,13 +37,28 @@ services:
       DATABASE_PATH: /data/lightning-lane.sqlite
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-120}
       MONITORING_ENABLED: ${MONITORING_ENABLED:-true}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
     volumes:
       - sqlite-data:/data
     mem_limit: 192m
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
+    logging: *logging
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    mem_limit: 64m
+    logging: *logging
 volumes:
   sqlite-data:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,19 @@
+FROM node:24-bookworm-slim AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+FROM node:24-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000 PROJECT_ROOT=/app DATABASE_PATH=/data/lightning-lane.sqlite
+COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
+COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build --chown=node:node /app/apps/web/public ./apps/web/public
+COPY --from=build --chown=node:node /app/packages/db ./packages/db
+COPY --chown=node:node deploy/start-web.mjs ./deploy/start-web.mjs
+RUN mkdir /data && chown node:node /data
+USER node
+CMD ["node","deploy/start-web.mjs"]

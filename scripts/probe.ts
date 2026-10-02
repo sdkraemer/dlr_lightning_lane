@@ -1,18 +1,20 @@
 import { pathToFileURL } from 'node:url';
 import type { DatabaseSync } from 'node:sqlite';
 import { openDatabase, hasPendingWatch } from '../packages/db/index.ts';
-import { PARKS, fetchLive } from '../packages/themeparks/index.ts';
+import { PARKS, fetchLive, FeedError } from '../packages/themeparks/index.ts';
 
 const text = (value: unknown) => typeof value === 'string' ? value : null;
 const number = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : null;
 
-export async function probe(db: DatabaseSync, diagnostic = false, fetcher = fetchLive) {
+export async function probe(db: DatabaseSync, diagnostic = false, fetcher = fetchLive, verbose = true) {
   if (!diagnostic && (process.env.MONITORING_ENABLED === 'false' || !hasPendingWatch(db))) {
     console.log('Skipped: monitoring disabled or no pending same-day target watches.');
     return { skipped: true, failures: 0 };
   }
   let failures = 0;
   for (const park of PARKS) {
+    const state=db.prepare('SELECT * FROM park_poll_state WHERE park_id=?').get(park.id);
+    if (state && Number(state.next_poll_at)>Date.now()) continue;
     try {
       const entities = await fetcher(park.id);
       const now = Date.now();
@@ -33,7 +35,8 @@ export async function probe(db: DatabaseSync, diagnostic = false, fetcher = fetc
         }
         db.exec('COMMIT');
       } catch (error) { db.exec('ROLLBACK'); throw error; }
-      for (const e of entities) console.log(JSON.stringify({
+      db.prepare('INSERT INTO park_poll_state(park_id,failures,next_poll_at) VALUES(?,0,0) ON CONFLICT(park_id) DO UPDATE SET failures=0,next_poll_at=0').run(park.id);
+      if (verbose) for (const e of entities) console.log(JSON.stringify({
         park: park.name, attractionId: e.id, attraction: e.name, status: e.status,
         observedAt: new Date(now).toISOString(), lastUpdated: e.lastUpdated,
         queueTypes: Object.keys(e.queue ?? {}),
@@ -43,6 +46,9 @@ export async function probe(db: DatabaseSync, diagnostic = false, fetcher = fetc
       }));
     } catch (error) {
       failures++;
+      const count=Number(state?.failures??0)+1;
+      const retryAt=Math.max(Date.now()+Math.min(900_000,120_000*2**Math.min(count-1,4)), error instanceof FeedError?error.retryAt:0);
+      db.prepare('INSERT INTO park_poll_state VALUES(?,?,?) ON CONFLICT(park_id) DO UPDATE SET failures=excluded.failures,next_poll_at=excluded.next_poll_at').run(park.id,count,retryAt);
       const message = error instanceof Error ? error.message : String(error);
       db.prepare("INSERT INTO poll_runs(park_id,fetched_at,outcome,error) VALUES (?,?,'error',?)").run(park.id,Date.now(),message);
       console.error(`${park.name}: ${message}`);

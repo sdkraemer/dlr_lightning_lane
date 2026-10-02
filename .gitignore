@@ -8,3 +8,7 @@ dist/
 coverage/
 *.sqlite*
 
+
+*.tsbuildinfo
+playwright-report/
+test-results/
