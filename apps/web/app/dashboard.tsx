@@ -1,9 +1,20 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 
-type Attraction = { id: string; name: string; park_name: string; park_id: string };
+type Attraction = {
+  id: string;
+  name: string;
+  park_name: string;
+  park_id: string;
+};
 type TimeSlot = { value: string; instant: number; nextDay: boolean };
-type ParkHours = { parkId: string; status: string; stale: boolean; windows: { opensAt: number; closesAt: number }[]; slots: TimeSlot[] };
+type ParkHours = {
+  parkId: string;
+  status: string;
+  stale: boolean;
+  windows: { opensAt: number; closesAt: number }[];
+  slots: TimeSlot[];
+};
 type Offer = {
   observed_at: number;
   status: string;
@@ -25,6 +36,7 @@ type Booking = {
   watch_state: string;
   displayState: string;
   offer: Offer | null;
+  farthestOffer: { return_start: string; return_end: string; observed_at: number } | null;
 };
 type Data = {
   date: string;
@@ -94,7 +106,13 @@ async function api(url: string, body?: unknown) {
   if (!response.ok) throw new Error(result.error || 'Request failed.');
   return result;
 }
-function TimePicker({ label, value, onChange, slots, required = false }: {
+function TimePicker({
+  label,
+  value,
+  onChange,
+  slots,
+  required = false,
+}: {
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -102,31 +120,67 @@ function TimePicker({ label, value, onChange, slots, required = false }: {
   required?: boolean;
 }) {
   const [hour = '', minute = ''] = value.split(':');
-  const hours = [...new Set(slots.map(slot => slot.value.slice(0, 2)))];
-  const minutes = slots.filter(slot => slot.value.startsWith(hour + ':')).map(slot => slot.value.slice(3));
-  return <div className="fields">
-    <label>{label} hour
-      <select aria-label={label + ' hour'} required={required} disabled={!slots.length}
-        value={hours.includes(hour) ? hour : ''}
-        onChange={e => {
-          const choices = slots.filter(slot => slot.value.startsWith(e.target.value + ':'));
-          onChange(e.target.value ? (choices.find(slot => slot.value.slice(3) === minute) ?? choices[0]).value : '');
-        }}>
-        <option value="" disabled={required}>{required ? 'Hour' : 'Not set'}</option>
-        {hours.map(hour => <option key={hour} value={hour}>
-          {Number(hour) % 12 || 12} {Number(hour) < 12 ? 'AM' : 'PM'}{slots.find(slot => slot.value.startsWith(hour + ':'))?.nextDay ? ' (next day)' : ''}
-        </option>)}
-      </select>
-    </label>
-    <label>{label} minute
-      <select aria-label={label + ' minute'} required={!!value} disabled={!minutes.length}
-        value={minutes.includes(minute) ? minute : ''}
-        onChange={e => onChange(hour + ':' + e.target.value)}>
-        <option value="" disabled>Minute</option>
-        {minutes.map(minute => <option key={minute} value={minute}>{minute}</option>)}
-      </select>
-    </label>
-  </div>;
+  const hours = [...new Set(slots.map((slot) => slot.value.slice(0, 2)))];
+  const minutes = slots
+    .filter((slot) => slot.value.startsWith(hour + ':'))
+    .map((slot) => slot.value.slice(3));
+  return (
+    <div className="fields">
+      <label>
+        {label} hour
+        <select
+          aria-label={label + ' hour'}
+          required={required}
+          disabled={!slots.length}
+          value={hours.includes(hour) ? hour : ''}
+          onChange={(e) => {
+            const choices = slots.filter((slot) =>
+              slot.value.startsWith(e.target.value + ':')
+            );
+            onChange(
+              e.target.value
+                ? (
+                    choices.find((slot) => slot.value.slice(3) === minute) ??
+                    choices[0]
+                  ).value
+                : ''
+            );
+          }}
+        >
+          <option value="" disabled={required}>
+            {required ? 'Hour' : 'Not set'}
+          </option>
+          {hours.map((hour) => (
+            <option key={hour} value={hour}>
+              {Number(hour) % 12 || 12} {Number(hour) < 12 ? 'AM' : 'PM'}
+              {slots.find((slot) => slot.value.startsWith(hour + ':'))?.nextDay
+                ? ' (next day)'
+                : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        {label} minute
+        <select
+          aria-label={label + ' minute'}
+          required={!!value}
+          disabled={!minutes.length}
+          value={minutes.includes(minute) ? minute : ''}
+          onChange={(e) => onChange(hour + ':' + e.target.value)}
+        >
+          <option value="" disabled>
+            Minute
+          </option>
+          {minutes.map((minute) => (
+            <option key={minute} value={minute}>
+              {minute}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
 }
 
 export default function Dashboard({ mock }: { mock: boolean }) {
@@ -138,6 +192,7 @@ export default function Dashboard({ mock }: { mock: boolean }) {
   const [busy, setBusy] = useState(false),
     [pushEnabled, setPushEnabled] = useState(false),
     [pushConfigured, setPushConfigured] = useState(false);
+  const [pushConfigError, setPushConfigError] = useState('');
   const [online, setOnline] = useState(true),
     [now, setNow] = useState(Date.now());
   const refresh = useCallback(async () => {
@@ -176,7 +231,10 @@ export default function Dashboard({ mock }: { mock: boolean }) {
         })
         .catch(() => {});
     api('/api/push')
-      .then((config) => setPushConfigured(config.configured))
+      .then((config) => {
+        setPushConfigured(config.configured);
+        setPushConfigError(config.error ?? '');
+      })
       .catch(() => {});
     return () => {
       clearInterval(timer);
@@ -246,7 +304,8 @@ export default function Dashboard({ mock }: { mock: boolean }) {
         const config = await api('/api/push');
         if (!config.configured)
           throw new Error(
-            'Notifications are not configured on the server yet.'
+            config.error ??
+              'Notifications are not configured on the server yet.'
           );
         const raw = atob(
           config.publicKey.replace(/-/g, '+').replace(/_/g, '/')
@@ -292,11 +351,18 @@ export default function Dashboard({ mock }: { mock: boolean }) {
       setBusy(false);
     }
   }
-  const selectedAttraction = data?.attractions.find(attraction => attraction.id === form.attractionId);
-  const selectedHours = data?.parkHours.find(hours => hours.parkId === selectedAttraction?.park_id);
+  const selectedAttraction = data?.attractions.find(
+    (attraction) => attraction.id === form.attractionId
+  );
+  const selectedHours = data?.parkHours.find(
+    (hours) => hours.parkId === selectedAttraction?.park_id
+  );
   const timeSlots = selectedHours?.slots ?? [];
-  const invalidTimes = [form.reservedStart, form.targetEarliest, form.targetLatest]
-    .some(value => value && !timeSlots.some(slot => slot.value === value));
+  const invalidTimes = [
+    form.reservedStart,
+    form.targetEarliest,
+    form.targetLatest,
+  ].some((value) => value && !timeSlots.some((slot) => slot.value === value));
   const active =
     data?.bookings.filter((b) => b.watch_state !== 'completed') ?? [];
   return (
@@ -392,13 +458,24 @@ export default function Dashboard({ mock }: { mock: boolean }) {
                 required
                 value={form.attractionId}
                 onChange={(e) =>
-                  setForm(previous => {
-                        const attraction = data?.attractions.find(a => a.id === e.target.value);
-                        const slots = data?.parkHours.find(h => h.parkId === attraction?.park_id)?.slots ?? [];
-                        const keep = (value: string) => slots.some(slot => slot.value === value) ? value : '';
-                        return { ...previous, attractionId: e.target.value, reservedStart: keep(previous.reservedStart),
-                          targetEarliest: keep(previous.targetEarliest), targetLatest: keep(previous.targetLatest) };
-                      })
+                  setForm((previous) => {
+                    const attraction = data?.attractions.find(
+                      (a) => a.id === e.target.value
+                    );
+                    const slots =
+                      data?.parkHours.find(
+                        (h) => h.parkId === attraction?.park_id
+                      )?.slots ?? [];
+                    const keep = (value: string) =>
+                      slots.some((slot) => slot.value === value) ? value : '';
+                    return {
+                      ...previous,
+                      attractionId: e.target.value,
+                      reservedStart: keep(previous.reservedStart),
+                      targetEarliest: keep(previous.targetEarliest),
+                      targetLatest: keep(previous.targetLatest),
+                    };
+                  })
                 }
               >
                 {data?.attractions.map((a) => (
@@ -409,14 +486,36 @@ export default function Dashboard({ mock }: { mock: boolean }) {
                 ))}
               </select>
             </label>
-            <p className="form-note" role="status">{timeSlots.length
-              ? (selectedHours?.stale ? 'Last known park hours: ' : 'Park hours: ') + selectedHours!.windows.map(window => time(window.opensAt) + ' – ' + time(window.closesAt)).join(', ') + ' Pacific'
-              : 'Park hours are unavailable for today. Time selection will be available when hours load.'}</p>
-            {invalidTimes && <p className="form-note" role="alert">Choose times within the selected park’s hours.</p>}
+            <p className="form-note" role="status">
+              {timeSlots.length
+                ? (selectedHours?.stale
+                    ? 'Last known park hours: '
+                    : 'Park hours: ') +
+                  selectedHours!.windows
+                    .map(
+                      (window) =>
+                        time(window.opensAt) + ' – ' + time(window.closesAt)
+                    )
+                    .join(', ') +
+                  ' Pacific'
+                : 'Park hours are unavailable for today. Time selection will be available when hours load.'}
+            </p>
+            {invalidTimes && (
+              <p className="form-note" role="alert">
+                Choose times within the selected park’s hours.
+              </p>
+            )}
             <fieldset>
               <legend>Currently reserved</legend>
-              <TimePicker slots={timeSlots} label="Start" value={form.reservedStart} required
-                onChange={reservedStart => setForm({ ...form, reservedStart })} />
+              <TimePicker
+                slots={timeSlots}
+                label="Start"
+                value={form.reservedStart}
+                required
+                onChange={(reservedStart) =>
+                  setForm({ ...form, reservedStart })
+                }
+              />
               <p className="form-note">Ends one hour after the start.</p>
             </fieldset>
             <fieldset>
@@ -424,10 +523,22 @@ export default function Dashboard({ mock }: { mock: boolean }) {
                 Desired start range <span>(optional)</span>
               </legend>
               <div className="range-pickers">
-                <TimePicker slots={timeSlots} label="Earliest" value={form.targetEarliest}
-                  onChange={targetEarliest => setForm({ ...form, targetEarliest })} />
-                <TimePicker slots={timeSlots} label="Latest" value={form.targetLatest}
-                  onChange={targetLatest => setForm({ ...form, targetLatest })} />
+                <TimePicker
+                  slots={timeSlots}
+                  label="Earliest"
+                  value={form.targetEarliest}
+                  onChange={(targetEarliest) =>
+                    setForm({ ...form, targetEarliest })
+                  }
+                />
+                <TimePicker
+                  slots={timeSlots}
+                  label="Latest"
+                  value={form.targetLatest}
+                  onChange={(targetLatest) =>
+                    setForm({ ...form, targetLatest })
+                  }
+                />
               </div>
             </fieldset>
             <label>
@@ -446,7 +557,10 @@ export default function Dashboard({ mock }: { mock: boolean }) {
               Today only. Alerts stop once your reserved start is inside your
               desired range.
             </p>
-            <button className="primary" disabled={busy || !timeSlots.length || invalidTimes}>
+            <button
+              className="primary"
+              disabled={busy || !timeSlots.length || invalidTimes}
+            >
               Save booking
             </button>
           </form>
@@ -466,7 +580,10 @@ export default function Dashboard({ mock }: { mock: boolean }) {
               <h3>No bookings yet</h3>
               <p>Add a booking to watch for your preferred return time.</p>
               {!data.attractions.length && (
-                <p>Lightning Lane Multi Pass attraction data is not available yet.</p>
+                <p>
+                  Lightning Lane Multi Pass attraction data is not available
+                  yet.
+                </p>
               )}
               <button
                 onClick={() => edit()}
@@ -526,10 +643,24 @@ export default function Dashboard({ mock }: { mock: boolean }) {
                             : 'Return time unavailable'}
                       </small>
                     </div>
+                    <div className="latest-observed">
+                      <span className="label">Latest observed</span>
+                      <strong>{b.farthestOffer ? time(b.farthestOffer.return_start) : '—'}</strong>
+                      <small>{b.farthestOffer
+                        ? 'Today · seen at ' + time(b.farthestOffer.observed_at)
+                        : 'No available return window recorded today'}</small>
+                      {available && !stale && b.farthestOffer &&
+                        Date.parse(b.offer!.return_start!) < Date.parse(b.farthestOffer.return_start) &&
+                        <small className="earlier-offer">Current offer is {Math.round((Date.parse(b.farthestOffer.return_start) - Date.parse(b.offer!.return_start!)) / 60000)} min earlier.</small>}
+                    </div>
                     <div className="standby">
-                      <span className="label">{stale ? 'Last standby' : 'Standby wait'}</span>
+                      <span className="label">
+                        {stale ? 'Last standby' : 'Standby wait'}
+                      </span>
                       <strong>
-                        {b.offer?.standby_wait == null ? '—' : b.offer.standby_wait + ' min'}
+                        {b.offer?.standby_wait == null
+                          ? '—'
+                          : b.offer.standby_wait + ' min'}
                       </strong>
                     </div>
                   </div>
@@ -602,7 +733,7 @@ export default function Dashboard({ mock }: { mock: boolean }) {
                 : 'Get alerts for your desired return time.'}
             </p>
             <button
-              disabled={busy || !pushConfigured}
+              disabled={busy || (!pushConfigured && !pushEnabled)}
               onClick={() => notifications(pushEnabled ? 'disable' : 'enable')}
             >
               {pushEnabled ? 'Disable this device' : 'Enable notifications'}
@@ -616,7 +747,11 @@ export default function Dashboard({ mock }: { mock: boolean }) {
                 Send a test
               </button>
             )}
-            {!pushConfigured && <small>Push setup pending.</small>}
+            {!pushConfigured && (
+              <small role="status">
+                {pushConfigError || 'Push setup pending.'}
+              </small>
+            )}
             {pushEnabled && (
               <small>Notifications stay on after sign-out.</small>
             )}

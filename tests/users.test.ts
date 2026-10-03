@@ -1,3 +1,4 @@
+import webpush from 'web-push';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -122,7 +123,10 @@ test('delivery rechecks ownership, including mismatched legacy jobs', async (t) 
   t.mock.method(Date, 'now', () => now);
   const keys = ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT'];
   const before = keys.map((k) => process.env[k]);
-  keys.forEach((k) => (process.env[k] = 'test'));
+  const vapid = webpush.generateVAPIDKeys();
+  process.env.VAPID_PUBLIC_KEY = vapid.publicKey;
+  process.env.VAPID_PRIVATE_KEY = vapid.privateKey;
+  process.env.VAPID_SUBJECT = 'mailto:test@example.com';
   const { db, alice, bob } = fixture();
   try {
     saveBooking(db, alice, input, undefined, now);

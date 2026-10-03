@@ -1,14 +1,11 @@
+import { vapidConfiguration } from './vapid.ts';
 import webpush from 'web-push';
 import type { DatabaseSync } from 'node:sqlite';
 import { eligibleWhere } from '../db/index.ts';
 import { parkDate } from './time.ts';
 import { latestOffer, phaseFor } from './alerts.ts';
 export function pushReady() {
-  return !!(
-    process.env.VAPID_PUBLIC_KEY &&
-    process.env.VAPID_PRIVATE_KEY &&
-    process.env.VAPID_SUBJECT
-  );
+  return vapidConfiguration().configured;
 }
 export function validPushEndpoint(endpoint: string) {
   try {
@@ -31,14 +28,15 @@ export async function sendPush(
   subscription: webpush.PushSubscription,
   payload: object
 ) {
-  if (!pushReady()) throw new Error('Configure VAPID keys and subject first.');
+  const config = vapidConfiguration();
+  if (!config.configured) throw new Error(config.error);
   if (!validPushEndpoint(subscription.endpoint))
     throw new Error('Unsupported push service.');
   return webpush.sendNotification(subscription, JSON.stringify(payload), {
     vapidDetails: {
-      subject: process.env.VAPID_SUBJECT!,
-      publicKey: process.env.VAPID_PUBLIC_KEY!,
-      privateKey: process.env.VAPID_PRIVATE_KEY!,
+      subject: config.subject,
+      publicKey: config.publicKey,
+      privateKey: config.privateKey,
     },
     TTL: 120,
     timeout: 10_000,

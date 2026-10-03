@@ -346,3 +346,8 @@ CREATE INDEX subscriptions_user ON push_subscriptions(user_id);
 Migration 001 preserves the original schema for upgrades. Migration 002 removes expires_at, replaces the active-booking index, and adds cancellation, park backoff and heartbeat state. Migration 003 adds users and ownership. Both fresh and existing databases pass through these ordered migrations; the ledger prevents reapplication.
 
 Migration 004 adds the shared park schedule cache.
+
+
+## Farthest offered return start
+
+The dashboard derives farthestOffer from persisted queue observations for each attraction and queue type, using observations fetched since Pacific midnight through now. It selects the maximum valid AVAILABLE return start by instant and shows when it was seen. Earlier offers and unavailable responses do not lower this historical maximum. Late-night return starts on the following calendar date are supported. The maximum resets with the observation date and survives worker restarts and booking edits because history is durable. It includes observations collected before the booking was added. No table or migration is needed. Alerts continue to use the current offer only. This is the farthest value captured during enabled monitoring, not a claim about unobserved offers or evidence of cancellation.

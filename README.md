@@ -27,6 +27,105 @@ For real Auth0, copy .env.example to .env, configure the Auth0 values and use
 `npm run dev`. Builds work without Auth0 credentials; unauthenticated access
 fails closed until configured. Never commit .env.
 
+## Run locally with Docker
+
+Install and start Docker Desktop with **Linux containers** and Docker Compose v2.
+Run these PowerShell commands from the repository root. Node and npm are not
+required on the host for this route. Ensure ports 80 and 443 are free.
+
+The existing Compose stack runs the production web app, worker, and Caddy.
+It requires real Auth0 credentials and HTTPS; mock login is only supported by the
+npm development setup above.
+
+### Configure local settings
+
+Copy the example only if you do not already have a .env file:
+
+~~~powershell
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+~~~
+
+Set these values in .env, along with your AUTH0_DOMAIN, AUTH0_CLIENT_ID,
+AUTH0_CLIENT_SECRET, and AUTH0_SECRET:
+
+~~~dotenv
+APP_DOMAIN=localhost
+APP_BASE_URL=https://localhost
+IMAGE_TAG=local
+DEV_MOCK_AUTH=false
+~~~
+
+In your Auth0 Regular Web Application, add https://localhost/auth/callback to
+Allowed Callback URLs, and https://localhost to Allowed Logout URLs and Allowed
+Web Origins. Keep any existing production URLs.
+
+Build the images, then generate an Auth0 session secret if you do not have one:
+
+~~~powershell
+docker compose build
+docker compose run --rm --no-deps worker node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+~~~
+
+Save that output as AUTH0_SECRET in .env. To enable push notifications, generate
+a VAPID pair and copy both printed values into .env; also set VAPID_SUBJECT
+to your contact address, such as mailto:you@example.com:
+
+~~~powershell
+docker compose run --rm --no-deps worker node scripts/vapid.mjs
+~~~
+
+Keep these secrets stable between restarts and never commit .env.
+
+### Initialize and start
+
+~~~powershell
+docker compose run --rm --no-deps worker node scripts/init-db.ts
+docker compose run --rm --no-deps worker node scripts/probe.ts --diagnostic
+docker compose up -d
+docker compose ps
+~~~
+
+The diagnostic populates the attraction catalog and inspects the live feed once.
+The worker runs in the background and subsequently polls only when an active
+booking needs its target. Do not also start a separate npm worker against this database.
+
+Caddy issues a local HTTPS certificate for localhost. After Caddy starts, trust
+its local root certificate on your Windows account:
+
+~~~powershell
+New-Item -ItemType Directory -Force data | Out-Null
+docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./data/caddy-local-root.crt
+Import-Certificate -FilePath ./data/caddy-local-root.crt -CertStoreLocation Cert:\CurrentUser\Root
+~~~
+
+This adds this local Caddy instance's certificate authority to your account's trusted
+roots. Restart your browser if needed, then open [https://localhost](https://localhost)
+and sign in. If the certificate is not yet available, check the Caddy logs and retry
+after startup. On macOS or Linux, import the same root certificate into your
+system/browser trust store using that platform's certificate tools.
+
+### Everyday commands
+
+~~~powershell
+# Follow logs (Ctrl+C stops following; containers keep running)
+docker compose logs -f web worker caddy
+
+# Rebuild and restart after changing application code
+docker compose up -d --build
+
+# Stop and remove containers while keeping saved data
+docker compose down
+
+# Start again using the existing images and saved data
+docker compose up -d
+~~~
+
+There is no source-code hot reload in this production Docker setup; rebuild after
+edits. SQLite is stored in the sqlite-data named Docker volume shared by web and
+worker, separate from the npm setup's ./data/lightning-lane.sqlite. Caddy's
+certificates also persist in named volumes. Do not use **docker compose down -v**
+unless you intend to delete the local database and certificates.
+
 ## What works
 
 - Mobile dashboard; add/edit today's reserved window and optional target start range.

@@ -241,7 +241,7 @@ h2 {
 }
 .window-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr .75fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, .75fr);
   gap: 16px;
   margin-bottom: 18px;
 }
@@ -547,13 +547,25 @@ footer {
     margin-bottom: 20px;
   }
   .window-grid {
-    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px 12px;
   }
   .window-grid strong {
     font-size: 20px;
   }
   .offered {
-    padding-left: 12px;
+    grid-column: 1;
+    grid-row: 2;
+    border-left: 0;
+    padding-left: 0;
+  }
+  .latest-observed {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .standby {
+    grid-column: 2;
+    grid-row: 1;
   }
   .card-actions {
     gap: 4px;
@@ -581,3 +593,6 @@ footer {
     transition: background 0.15s;
   }
 }
+
+
+.latest-observed .earlier-offer { color: var(--ink); }

@@ -1,3 +1,4 @@
+import webpush from 'web-push';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -22,11 +23,19 @@ function fixture() {
     '7340550b-c14d-4def-80bb-acdb51d49a66',
     'Space Mountain'
   );
-  const run = db.prepare("INSERT INTO poll_runs(park_id,fetched_at,outcome) VALUES(?,0,'ok')")
+  const run = db
+    .prepare(
+      "INSERT INTO poll_runs(park_id,fetched_at,outcome) VALUES(?,0,'ok')"
+    )
     .run('7340550b-c14d-4def-80bb-acdb51d49a66').lastInsertRowid;
-  const observation = db.prepare("INSERT INTO observations(poll_run_id,attraction_id,observed_at,attraction_name,status,raw_entity_json) VALUES(?,?,0,'Space Mountain','CLOSED','{}')")
-    .run(run,attraction).lastInsertRowid;
-  db.prepare("INSERT INTO queue_observations(observation_id,queue_type,state,raw_json) VALUES(?,'RETURN_TIME','FINISHED','{}')").run(observation);
+  const observation = db
+    .prepare(
+      "INSERT INTO observations(poll_run_id,attraction_id,observed_at,attraction_name,status,raw_entity_json) VALUES(?,?,0,'Space Mountain','CLOSED','{}')"
+    )
+    .run(run, attraction).lastInsertRowid;
+  db.prepare(
+    "INSERT INTO queue_observations(observation_id,queue_type,state,raw_json) VALUES(?,'RETURN_TIME','FINISHED','{}')"
+  ).run(observation);
   return db;
 }
 const input = {
@@ -41,37 +50,100 @@ test('booking choices exclude standby-only and Single Pass rides but retain unav
   const db = fixture();
   try {
     const park = '7340550b-c14d-4def-80bb-acdb51d49a66';
-    const run = db.prepare("INSERT INTO poll_runs(park_id,fetched_at,outcome) VALUES(?,?,'ok')").run(park, now).lastInsertRowid;
+    const run = db
+      .prepare(
+        "INSERT INTO poll_runs(park_id,fetched_at,outcome) VALUES(?,?,'ok')"
+      )
+      .run(park, now).lastInsertRowid;
     for (const [id, name, queue] of [
       ['columbia', 'Sailing Ship Columbia', 'STANDBY'],
       ['single-pass', 'Single Pass ride', 'PAID_RETURN_TIME'],
       ['unknown', 'Unknown ride', null],
       [attraction, 'Space Mountain', null],
     ]) {
-      db.prepare('INSERT OR IGNORE INTO attractions VALUES(?,?,?)').run(id!, park, name!);
-      const observation = db.prepare("INSERT INTO observations(poll_run_id,attraction_id,observed_at,attraction_name,status,raw_entity_json) VALUES(?,?,?,?,'DOWN','{}')")
+      db.prepare('INSERT OR IGNORE INTO attractions VALUES(?,?,?)').run(
+        id!,
+        park,
+        name!
+      );
+      const observation = db
+        .prepare(
+          "INSERT INTO observations(poll_run_id,attraction_id,observed_at,attraction_name,status,raw_entity_json) VALUES(?,?,?,?,'DOWN','{}')"
+        )
         .run(run, id!, now, name!).lastInsertRowid;
-      if (queue) db.prepare("INSERT INTO queue_observations(observation_id,queue_type,state,raw_json) VALUES(?,?,'AVAILABLE','{}')").run(observation, queue);
+      if (queue)
+        db.prepare(
+          "INSERT INTO queue_observations(observation_id,queue_type,state,raw_json) VALUES(?,?,'AVAILABLE','{}')"
+        ).run(observation, queue);
     }
-    assert.deepEqual(dashboard(db, 1, now).attractions.map(a => a.id), [attraction]);
+    assert.deepEqual(
+      dashboard(db, 1, now).attractions.map((a) => a.id),
+      [attraction]
+    );
     const id = saveBooking(db, 1, input, undefined, now);
-    for (const attractionId of ['columbia', 'single-pass', 'unknown', 'nonexistent']) {
-      assert.throws(() => saveBooking(db, 1, { ...input, attractionId }, undefined, now), /Lightning Lane Multi Pass/);
-      assert.throws(() => saveBooking(db, 1, { ...input, attractionId }, id, now), /Lightning Lane Multi Pass/);
+    for (const attractionId of [
+      'columbia',
+      'single-pass',
+      'unknown',
+      'nonexistent',
+    ]) {
+      assert.throws(
+        () => saveBooking(db, 1, { ...input, attractionId }, undefined, now),
+        /Lightning Lane Multi Pass/
+      );
+      assert.throws(
+        () => saveBooking(db, 1, { ...input, attractionId }, id, now),
+        /Lightning Lane Multi Pass/
+      );
     }
-  } finally { db.close(); }
+  } finally {
+    db.close();
+  }
 });
 
 test('reserved starts accept five-minute increments and reject other minutes', () => {
   const db = fixture();
   try {
-    for (const minute of ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55']) {
-      assert.ok(saveBooking(db, 1, { ...input, reservedStart: '16:' + minute }, undefined, now));
+    for (const minute of [
+      '00',
+      '05',
+      '10',
+      '15',
+      '20',
+      '25',
+      '30',
+      '35',
+      '40',
+      '45',
+      '50',
+      '55',
+    ]) {
+      assert.ok(
+        saveBooking(
+          db,
+          1,
+          { ...input, reservedStart: '16:' + minute },
+          undefined,
+          now
+        )
+      );
     }
     for (const minute of ['01', '12', '59']) {
-      assert.throws(() => saveBooking(db, 1, { ...input, reservedStart: '16:' + minute }, undefined, now), /five-minute increments/);
+      assert.throws(
+        () =>
+          saveBooking(
+            db,
+            1,
+            { ...input, reservedStart: '16:' + minute },
+            undefined,
+            now
+          ),
+        /five-minute increments/
+      );
     }
-  } finally { db.close(); }
+  } finally {
+    db.close();
+  }
 });
 test('booking updates suppress watching; yesterday/tomorrow never watch', () => {
   const db = fixture();
@@ -80,21 +152,9 @@ test('booking updates suppress watching; yesterday/tomorrow never watch', () => 
     assert.equal(hasPendingWatch(db, now), true);
     assert.equal(hasPendingWatch(db, now + 86400000), false);
     assert.equal(hasPendingWatch(db, now - 86400000), false);
-    saveBooking(
-      db,
-      1,
-      { ...input, reservedStart: '15:00' },
-      id,
-      now
-    );
+    saveBooking(db, 1, { ...input, reservedStart: '15:00' }, id, now);
     assert.equal(hasPendingWatch(db, now), false);
-    saveBooking(
-      db,
-      1,
-      { ...input, reservedStart: '15:30' },
-      id,
-      now
-    );
+    saveBooking(db, 1, { ...input, reservedStart: '15:30' }, id, now);
     assert.equal(hasPendingWatch(db, now), false);
     assert.throws(() =>
       saveBooking(db, 1, { ...input, targetEarliest: '16:00' }, id, now)
@@ -209,13 +269,7 @@ test('logical alerts deduplicate and editing cancels pending delivery', () => {
       1
     );
     assert.equal(hasPendingWatch(db, now), true);
-    saveBooking(
-      db,
-      1,
-      { ...input, reservedStart: '15:15' },
-      id,
-      now
-    );
+    saveBooking(db, 1, { ...input, reservedStart: '15:15' }, id, now);
     assert.equal(hasPendingWatch(db, now), false);
     assert.equal(
       db.prepare('SELECT canceled_at FROM push_deliveries').get()?.canceled_at,
@@ -254,8 +308,16 @@ test('reserved end is derived on create and edit, including midnight rollover', 
     assert.equal(Number(b.reserved_end) - Number(b.reserved_start), 3600000);
     assert.equal(b.visit_date, '2026-10-01');
     assert.equal(b.reserved_end, localInstant('2026-10-02', '00:30'));
-    saveBooking(db, 1, { ...input, reservedStart: '22:00', reservedEnd: '22:15' }, id, now);
-    const updated = db.prepare('SELECT reserved_end FROM bookings WHERE id=?').get(id)!;
+    saveBooking(
+      db,
+      1,
+      { ...input, reservedStart: '22:00', reservedEnd: '22:15' },
+      id,
+      now
+    );
+    const updated = db
+      .prepare('SELECT reserved_end FROM bookings WHERE id=?')
+      .get(id)!;
     assert.equal(updated.reserved_end, localInstant('2026-10-01', '23:00'));
   } finally {
     db.close();
@@ -269,8 +331,9 @@ test('push sender drops obsolete revisions and disables expired subscriptions', 
     process.env.VAPID_PRIVATE_KEY,
     process.env.VAPID_SUBJECT,
   ];
-  process.env.VAPID_PUBLIC_KEY = 'test';
-  process.env.VAPID_PRIVATE_KEY = 'test';
+  const vapid = webpush.generateVAPIDKeys();
+  process.env.VAPID_PUBLIC_KEY = vapid.publicKey;
+  process.env.VAPID_PRIVATE_KEY = vapid.privateKey;
   process.env.VAPID_SUBJECT = 'mailto:test@example.com';
   const db = fixture();
   try {

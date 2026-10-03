@@ -1,3 +1,4 @@
+import { farthestOfferToday } from './offer-history.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { eligibleWhere } from '../db/index.ts';
 import { parkDate } from './time.ts';
@@ -45,7 +46,7 @@ export function dashboard(db: DatabaseSync, userId: number, now = Date.now()) {
               ? 'Watch'
               : 'Waiting';
       }
-      return { ...b, offer: offer ?? null, displayState };
+      return { ...b, offer: offer ?? null, farthestOffer: farthestOfferToday(db, String(b.attraction_id), String(b.queue_type), now), displayState };
     });
   return {
     date,

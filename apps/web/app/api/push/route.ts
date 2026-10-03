@@ -1,3 +1,4 @@
+import { vapidConfiguration } from '../../../../../packages/core/vapid.ts';
 import { z } from 'zod';
 import { authorize } from '../../../lib/auth';
 import { db } from '../../../lib/db';
@@ -30,12 +31,14 @@ const schema = z.object({
   }),
 });
 export async function GET(request: Request) {
+  const config = vapidConfiguration();
   const auth = await authorize(request);
   if (auth instanceof Response) return auth;
   return Response.json(
     {
-      configured: pushReady(),
-      publicKey: pushReady() ? process.env.VAPID_PUBLIC_KEY : null,
+      configured: config.configured,
+      publicKey: config.publicKey,
+      error: config.error,
     },
     { headers: { 'Cache-Control': 'no-store' } }
   );
@@ -59,7 +62,7 @@ export async function POST(request: Request) {
     }
     if (!pushReady())
       return Response.json(
-        { error: 'VAPID is not configured.' },
+        { error: vapidConfiguration().error },
         { status: 503 }
       );
     if (body.action === 'test') {
