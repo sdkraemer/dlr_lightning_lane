@@ -16,12 +16,16 @@ Next.js builds; the worker uses Node 24's direct TypeScript execution.
    development mock session.
 2. Add a known attraction, today's reserved return window, and optionally an
    inclusive earliest/latest acceptable return START range.
+   Booking choices require a recorded RETURN_TIME queue (Multi Pass); standby-only
+   and PAID_RETURN_TIME-only rides are excluded. Sold-out, down and temporarily
+   missing queues do not remove previously observed Multi Pass rides. The server
+   enforces the same eligibility for new bookings and edits.
 3. When an eligible watch exists, the worker polls both parks every 60–120 seconds
    (120 default, measured after completion). All attraction/queue observations are
    retained, not only watched rides.
 4. Evaluate AVAILABLE RETURN_TIME windows on OPERATING rides using observations
    fetched within five minutes. Windows must parse, not be expired, and start on
-   today's Pacific date. An available window whose start has just passed can still
+   today's Pacific date or in the next-day portion of the target range. An available window whose start has just passed can still
    qualify while its end is in the future.
 5. A start inside the target range creates a reached event; outside but within
    the configured margin (15 minutes default, either side) creates approaching.
@@ -31,8 +35,11 @@ Next.js builds; the worker uses Node 24's direct TypeScript execution.
    here. A reserved start inside the range suppresses future watches/alerts.
 
 Only today's visit date in America/Los_Angeles is eligible. Yesterday and tomorrow
-are excluded regardless of stored state. Reserved end may roll past midnight;
-the visit date and start remain today. There is no expires_at cutoff.
+are excluded regardless of stored state. Reserved end is calculated as one hour
+after the reserved start on creation or edit and may roll past midnight;
+the visit date remains today. Schedule-derived starts and targets can fall after
+midnight on the next calendar date. Watches still expire at the visit-date rollover;
+there is no expires_at cutoff.
 
 Watching continues after an offered target is reached; the app cannot infer that
 a Disney reservation changed. Each phase is notified once per booking revision.
@@ -40,6 +47,17 @@ Edits or explicit resume increment the revision and rearm alerts. Pause/completi
 cancel pending deliveries. Reached supersedes an unsent approaching event. Requests
 already in flight cannot be recalled. Canceled opportunities do not automatically
 rearm the same revision.
+
+Park operating schedules come from `/v1/entity/{parkId}/schedule`. Authenticated
+dashboard loads and booking saves refresh a shared SQLite cache at most every six
+hours, independently of live wait-time polling. Failed requests back off for five
+minutes (or Retry-After). Previously fetched hours can be used for up to 24 hours
+with a last-known-hours label; missing or older hours disable time selection.
+Only OPERATING entries are used, excluding special-event/extra-hours sessions.
+Five-minute start choices include opening and exclude closing, respect gaps and
+partial hours, and resolve after-midnight choices to the next calendar date.
+The server enforces these same choices. The implied one-hour reservation end is
+not a selectable start and may extend beyond park closing.
 
 The dashboard displays current/last offered times, standby, status, feed freshness,
 worker heartbeat and recent push delivery state. It reads SQLite every 15 seconds;
@@ -309,6 +327,13 @@ CREATE TABLE users (
   created_at INTEGER NOT NULL
 ) STRICT;
 
+CREATE TABLE park_schedule_cache (
+  park_id TEXT PRIMARY KEY REFERENCES parks(id),
+  fetched_at INTEGER,
+  next_attempt_at INTEGER NOT NULL DEFAULT 0,
+  schedule_json TEXT CHECK(schedule_json IS NULL OR json_valid(schedule_json))
+) STRICT;
+
 CREATE INDEX observations_history ON observations(attraction_id,observed_at);
 
 CREATE INDEX bookings_active ON bookings(visit_date,watch_state);
@@ -319,3 +344,5 @@ CREATE INDEX subscriptions_user ON push_subscriptions(user_id);
 ```
 
 Migration 001 preserves the original schema for upgrades. Migration 002 removes expires_at, replaces the active-booking index, and adds cancellation, park backoff and heartbeat state. Migration 003 adds users and ownership. Both fresh and existing databases pass through these ordered migrations; the ledger prevents reapplication.
+
+Migration 004 adds the shared park schedule cache.

@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { eligibleWhere } from '../db/index.ts';
-import { parkDate } from './time.ts';
+import { parkDate, nextDate } from './time.ts';
 export const MAX_OBSERVATION_AGE = 5 * 60_000;
 export type Offer = {
   observed_at: number;
@@ -33,7 +33,9 @@ export function phaseFor(
     !Number.isFinite(end) ||
     end < start ||
     end <= now ||
-    parkDate(start) !== parkDate(now)
+    (parkDate(start) !== parkDate(now) &&
+      !(parkDate(start) === nextDate(parkDate(now)) &&
+        (parkDate(earliest) === parkDate(start) || parkDate(latest) === parkDate(start))))
   )
     return null;
   if (start >= earliest && start <= latest) return 'reached';

@@ -17,10 +17,19 @@ try {
   await page
     .getByLabel('Attraction', { exact: true })
     .selectOption('fixture-space');
-  await page.getByLabel('Start', { exact: true }).fill('23:00');
-  await page.getByLabel('End', { exact: true }).fill('23:55');
-  await page.getByLabel('Earliest', { exact: true }).fill('23:10');
-  await page.getByLabel('Latest', { exact: true }).fill('23:30');
+  await page.getByLabel('Start hour', { exact: true }).selectOption('23');
+  await page.getByLabel('Start minute', { exact: true }).selectOption('00');
+  assert.deepEqual(await page.getByLabel('Start minute', { exact: true }).locator('option:not([disabled])').evaluateAll(options => options.map(option => option.value)),
+    ['00','05','10','15','20','25','30','35','40','45','50','55']);
+  assert.equal(await page.getByLabel('End', { exact: true }).count(), 0);
+  await page.getByLabel('Earliest hour', { exact: true }).selectOption('23');
+  await page.getByLabel('Earliest minute', { exact: true }).selectOption('10');
+  await page.getByLabel('Latest hour', { exact: true }).selectOption('23');
+  await page.getByLabel('Latest minute', { exact: true }).selectOption('30');
+  for (const label of ['Earliest', 'Latest']) {
+    assert.deepEqual(await page.getByLabel(label + ' minute', { exact: true }).locator('option:not([disabled])').evaluateAll(options => options.map(option => option.value)),
+      ['00','05','10','15','20','25','30','35','40','45','50','55']);
+  }
   await page.getByRole('button', { name: 'Save booking', exact: true }).click();
   await page
     .getByRole('heading', { name: 'Space Mountain', exact: true })
@@ -28,6 +37,7 @@ try {
   let result = await page.request.get(base + '/api/dashboard');
   let data = await result.json();
   assert.equal(data.bookings.length, 1);
+  assert.equal(data.bookings[0].reserved_end - data.bookings[0].reserved_start, 3_600_000);
   assert.equal(data.pollingNeeded, true);
   const crossOrigin = await page.request.post(base + '/api/bookings', {
     headers: { origin: 'https://evil.example' },
@@ -37,12 +47,13 @@ try {
   await page
     .getByRole('button', { name: 'Update booking', exact: true })
     .click();
-  await page.getByLabel('Start', { exact: true }).fill('23:15');
+  await page.getByLabel('Start minute', { exact: true }).selectOption('15');
   await page.getByRole('button', { name: 'Save booking', exact: true }).click();
   await page.getByText('Booking in target', { exact: true }).waitFor();
   result = await page.request.get(base + '/api/dashboard');
   data = await result.json();
   assert.equal(data.pollingNeeded, false);
+  assert.equal(data.bookings[0].reserved_end - data.bookings[0].reserved_start, 3_600_000);
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
   await page.getByText('Paused', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Resume', exact: true }).click();
@@ -63,6 +74,17 @@ try {
     path: 'data/screenshots/desktop.png',
     fullPage: true,
   });
+  await page.getByRole('button', { name: 'Update booking', exact: true }).click();
+  for (const label of ['Earliest', 'Latest']) {
+    await page.getByLabel(label + ' hour', { exact: true }).selectOption('');
+    assert.equal(await page.getByLabel(label + ' minute', { exact: true }).isDisabled(), true);
+  }
+  await page.getByRole('button', { name: 'Save booking', exact: true }).click();
+  await page.getByText('No target', { exact: true }).waitFor();
+  result = await page.request.get(base + '/api/dashboard');
+  data = await result.json();
+  assert.equal(data.bookings[0].target_earliest_start, null);
+  assert.equal(data.bookings[0].target_latest_start, null);
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await page.getByRole('heading', { name: 'No bookings yet' }).waitFor();
   assert.deepEqual(errors, []);

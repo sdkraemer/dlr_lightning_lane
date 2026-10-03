@@ -20,7 +20,6 @@ const api = await request.newContext({
 const booking = {
   attractionId: 'fixture-space',
   reservedStart: '23:00',
-  reservedEnd: '23:55',
   targetEarliest: '23:10',
   targetLatest: '23:30',
   earlyMinutes: 15,

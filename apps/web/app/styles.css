@@ -241,7 +241,7 @@ h2 {
 }
 .window-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr .75fr;
   gap: 16px;
   margin-bottom: 18px;
 }
@@ -434,7 +434,11 @@ select {
   font-weight: 400;
   color: var(--muted);
 }
-.fields {
+  .range-pickers {
+    display: grid;
+    gap: 12px;
+  }
+  .fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
@@ -546,10 +550,10 @@ footer {
     gap: 12px;
   }
   .window-grid strong {
-    font-size: 23px;
+    font-size: 20px;
   }
   .offered {
-    padding-left: 16px;
+    padding-left: 12px;
   }
   .card-actions {
     gap: 4px;

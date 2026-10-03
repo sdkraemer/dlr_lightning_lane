@@ -1,5 +1,6 @@
 import { openDatabase } from '../packages/db/index.ts';
 import { PARKS } from '../packages/themeparks/index.ts';
+import { seedParkHours } from '../tests/fixtures.ts';
 const db = openDatabase();
 try {
   db.prepare('INSERT OR REPLACE INTO attractions VALUES(?,?,?)').run(
@@ -8,6 +9,7 @@ try {
     'Space Mountain'
   );
   const now = Date.now();
+  seedParkHours(db, now);
   const run = db
     .prepare(
       "INSERT INTO poll_runs(park_id,fetched_at,outcome) VALUES(?,?,'ok')"

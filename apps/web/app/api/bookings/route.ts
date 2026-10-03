@@ -1,5 +1,6 @@
 import { authorize } from '../../../lib/auth';
 import { db } from '../../../lib/db';
+import { refreshParkHours } from '../../../../../packages/core/park-hours.ts';
 import {
   saveBooking,
   setBookingState,
@@ -21,6 +22,7 @@ export async function POST(request: Request) {
       setBookingState(db(), auth.userId, body.id, body.state);
       return Response.json({ ok: true });
     }
+    await refreshParkHours(db());
     const id = saveBooking(db(), auth.userId, body.booking, body.id);
     return Response.json({ id });
   } catch (e) {

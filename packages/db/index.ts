@@ -53,6 +53,10 @@ export function openDatabase(
       );
       db.prepare('INSERT INTO schema_migrations VALUES(3,?)').run(Date.now());
     }
+    if (!db.prepare('SELECT 1 FROM schema_migrations WHERE version=4').get()) {
+      db.exec(readFileSync(resolve(process.env.PROJECT_ROOT ?? process.cwd(), 'packages/db/migrations/004-park-schedules.sql'), 'utf8'));
+      db.prepare('INSERT INTO schema_migrations VALUES(4,?)').run(Date.now());
+    }
     // Never give legacy data to the first person who signs up.
     const legacyOwner = process.env.AUTH0_ALLOWED_SUB?.trim();
     if (legacyOwner && !legacyOwner.includes('replace-me')) {

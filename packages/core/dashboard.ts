@@ -2,6 +2,9 @@ import type { DatabaseSync } from 'node:sqlite';
 import { eligibleWhere } from '../db/index.ts';
 import { parkDate } from './time.ts';
 import { latestOffer, phaseFor, MAX_OBSERVATION_AGE } from './alerts.ts';
+import { bookingAttractions } from './attractions.ts';
+import { parkHours } from './park-hours.ts';
+import { PARKS } from '../themeparks/index.ts';
 export function dashboard(db: DatabaseSync, userId: number, now = Date.now()) {
   const date = parkDate(now);
   const bookings = db
@@ -47,6 +50,7 @@ export function dashboard(db: DatabaseSync, userId: number, now = Date.now()) {
   return {
     date,
     now,
+    parkHours: PARKS.map(park => parkHours(db, park.id, now)),
     bookings,
     monitoringEnabled: process.env.MONITORING_ENABLED !== 'false',
     pollingNeeded: Boolean(
@@ -67,11 +71,7 @@ export function dashboard(db: DatabaseSync, userId: number, now = Date.now()) {
       SELECT id FROM poll_runs WHERE park_id=p.id ORDER BY fetched_at DESC,id DESC LIMIT 1)`
       )
       .all(),
-    attractions: db
-      .prepare(
-        'SELECT a.*,p.name park_name FROM attractions a JOIN parks p ON p.id=a.park_id ORDER BY a.name'
-      )
-      .all(),
+    attractions: bookingAttractions(db),
     deliveries: db
       .prepare(
         `SELECT d.sent_at,d.last_error,d.canceled_at,e.phase,a.name FROM push_deliveries d

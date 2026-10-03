@@ -106,3 +106,7 @@ Once assigned, changing this variable does not transfer existing data.
 On a shared browser, notifications remain active after sign-out. Enabling them under
 a different account replaces the browser subscription; the old account’s device
 record is never transferred. Use Disable this device before handing over a browser.
+
+Time dropdowns use the selected park’s regular operating schedule from ThemeParks.wiki,
+cached for six hours. They offer five-minute choices during opening hours; missing
+hours disable selection. Special-event and extra-hours schedules are excluded.

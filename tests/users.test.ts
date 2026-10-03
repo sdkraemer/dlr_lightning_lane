@@ -7,6 +7,7 @@ import {
 } from '../packages/db/index.ts';
 import { saveBooking, setBookingState } from '../packages/core/bookings.ts';
 import { dashboard } from '../packages/core/dashboard.ts';
+import { seedParkHours } from './fixtures.ts';
 import { evaluateAlerts } from '../packages/core/alerts.ts';
 import { deliverAlerts } from '../packages/core/push.ts';
 import {
@@ -19,7 +20,6 @@ const now = Date.parse('2026-10-01T17:00:00Z');
 const input = {
   attractionId: 'ride',
   reservedStart: '16:00',
-  reservedEnd: '17:00',
   targetEarliest: '15:00',
   targetLatest: '15:30',
   earlyMinutes: 15,
@@ -30,6 +30,7 @@ const sub = (name: string) => ({
 });
 function fixture() {
   const db = openDatabase(':memory:');
+  seedParkHours(db, now);
   const alice = ensureUser(db, 'auth0|alice'),
     bob = ensureUser(db, 'google-oauth2|bob');
   db.prepare('INSERT INTO attractions VALUES(?,?,?)').run(

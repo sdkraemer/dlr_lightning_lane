@@ -31,7 +31,7 @@ test('existing initial database upgrades without losing reservations or observat
     assert.equal(db.prepare('SELECT count(*) n FROM bookings').get()?.n, 1);
     assert.equal(
       db.prepare('SELECT count(*) n FROM schema_migrations').get()?.n,
-      3
+      4
     );
     assert.equal(
       db
@@ -47,7 +47,7 @@ test('existing initial database upgrades without losing reservations or observat
   const again = openDatabase(file);
   assert.equal(
     again.prepare('SELECT count(*) n FROM schema_migrations').get()?.n,
-    3
+    4
   );
   again.close();
 });

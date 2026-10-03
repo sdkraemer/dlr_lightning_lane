@@ -1,14 +1,22 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
-import { parkDate, localInstant, nextDate } from './time.ts';
+import { parkDate } from './time.ts';
+import { supportsBooking } from './attractions.ts';
+import { parkHours } from './park-hours.ts';
 
 const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const targetClock = clock.refine(
+  (value) => Number(value.slice(3)) % 5 === 0,
+  'Desired times must use five-minute increments.'
+);
 export const bookingInput = z.object({
   attractionId: z.string().min(1).max(100),
-  reservedStart: clock,
-  reservedEnd: clock,
-  targetEarliest: z.union([clock, z.literal('')]),
-  targetLatest: z.union([clock, z.literal('')]),
+  reservedStart: clock.refine(
+    (value) => Number(value.slice(3)) % 5 === 0,
+    'Reserved start must use five-minute increments.'
+  ),
+  targetEarliest: z.union([targetClock, z.literal('')]),
+  targetLatest: z.union([targetClock, z.literal('')]),
   earlyMinutes: z.number().int().min(0).max(120).default(15),
 });
 export function saveBooking(
@@ -20,21 +28,26 @@ export function saveBooking(
 ) {
   const b = bookingInput.parse(input);
   const date = parkDate(now);
-  const start = localInstant(date, b.reservedStart),
-    end = localInstant(
-      b.reservedEnd < b.reservedStart ? nextDate(date) : date,
-      b.reservedEnd
-    );
+  if (!supportsBooking(db, b.attractionId))
+    throw new Error('Choose an attraction with Lightning Lane Multi Pass.');
+  const attraction = db.prepare('SELECT park_id FROM attractions WHERE id=?').get(b.attractionId)!;
+  const hours = parkHours(db, String(attraction.park_id), now);
+  if (!hours.slots.length) throw new Error('Park hours are unavailable. Please try again shortly.');
+  const resolveTime = (value: string) => {
+    const slot = hours.slots.find(slot => slot.value === value);
+    if (!slot) throw new Error('Choose a time during this park’s operating hours.');
+    return slot.instant;
+  };
+  const start = resolveTime(b.reservedStart);
+  const end = start + 60 * 60_000;
   if (!!b.targetEarliest !== !!b.targetLatest)
     throw new Error('Enter both target boundaries or leave both empty.');
   const earliest = b.targetEarliest
-    ? localInstant(date, b.targetEarliest)
+    ? resolveTime(b.targetEarliest)
     : null;
-  const latest = b.targetLatest ? localInstant(date, b.targetLatest) : null;
+  const latest = b.targetLatest ? resolveTime(b.targetLatest) : null;
   if (earliest !== null && latest !== null && latest < earliest)
     throw new Error('Target latest must be at or after earliest.');
-  if (!db.prepare('SELECT 1 FROM attractions WHERE id=?').get(b.attractionId))
-    throw new Error('Choose a known attraction.');
   db.exec('BEGIN IMMEDIATE');
   try {
     if (id !== undefined) {

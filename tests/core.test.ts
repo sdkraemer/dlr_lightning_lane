@@ -9,26 +9,70 @@ import { saveBooking, setBookingState } from '../packages/core/bookings.ts';
 import { parkDate, localInstant } from '../packages/core/time.ts';
 import { evaluateAlerts, phaseFor } from '../packages/core/alerts.ts';
 import { validPushEndpoint, deliverAlerts } from '../packages/core/push.ts';
+import { dashboard } from '../packages/core/dashboard.ts';
+import { seedParkHours } from './fixtures.ts';
 const now = Date.parse('2026-10-01T17:00:00Z');
 const attraction = 'ride';
 function fixture() {
   const db = openDatabase(':memory:');
+  seedParkHours(db, now);
   ensureUser(db, 'test-user');
   db.prepare('INSERT INTO attractions VALUES(?,?,?)').run(
     attraction,
     '7340550b-c14d-4def-80bb-acdb51d49a66',
     'Space Mountain'
   );
+  const run = db.prepare("INSERT INTO poll_runs(park_id,fetched_at,outcome) VALUES(?,0,'ok')")
+    .run('7340550b-c14d-4def-80bb-acdb51d49a66').lastInsertRowid;
+  const observation = db.prepare("INSERT INTO observations(poll_run_id,attraction_id,observed_at,attraction_name,status,raw_entity_json) VALUES(?,?,0,'Space Mountain','CLOSED','{}')")
+    .run(run,attraction).lastInsertRowid;
+  db.prepare("INSERT INTO queue_observations(observation_id,queue_type,state,raw_json) VALUES(?,'RETURN_TIME','FINISHED','{}')").run(observation);
   return db;
 }
 const input = {
   attractionId: attraction,
   reservedStart: '16:00',
-  reservedEnd: '17:00',
   targetEarliest: '15:00',
   targetLatest: '15:30',
   earlyMinutes: 15,
 };
+
+test('booking choices exclude standby-only and Single Pass rides but retain unavailable Multi Pass rides', () => {
+  const db = fixture();
+  try {
+    const park = '7340550b-c14d-4def-80bb-acdb51d49a66';
+    const run = db.prepare("INSERT INTO poll_runs(park_id,fetched_at,outcome) VALUES(?,?,'ok')").run(park, now).lastInsertRowid;
+    for (const [id, name, queue] of [
+      ['columbia', 'Sailing Ship Columbia', 'STANDBY'],
+      ['single-pass', 'Single Pass ride', 'PAID_RETURN_TIME'],
+      ['unknown', 'Unknown ride', null],
+      [attraction, 'Space Mountain', null],
+    ]) {
+      db.prepare('INSERT OR IGNORE INTO attractions VALUES(?,?,?)').run(id!, park, name!);
+      const observation = db.prepare("INSERT INTO observations(poll_run_id,attraction_id,observed_at,attraction_name,status,raw_entity_json) VALUES(?,?,?,?,'DOWN','{}')")
+        .run(run, id!, now, name!).lastInsertRowid;
+      if (queue) db.prepare("INSERT INTO queue_observations(observation_id,queue_type,state,raw_json) VALUES(?,?,'AVAILABLE','{}')").run(observation, queue);
+    }
+    assert.deepEqual(dashboard(db, 1, now).attractions.map(a => a.id), [attraction]);
+    const id = saveBooking(db, 1, input, undefined, now);
+    for (const attractionId of ['columbia', 'single-pass', 'unknown', 'nonexistent']) {
+      assert.throws(() => saveBooking(db, 1, { ...input, attractionId }, undefined, now), /Lightning Lane Multi Pass/);
+      assert.throws(() => saveBooking(db, 1, { ...input, attractionId }, id, now), /Lightning Lane Multi Pass/);
+    }
+  } finally { db.close(); }
+});
+
+test('reserved starts accept five-minute increments and reject other minutes', () => {
+  const db = fixture();
+  try {
+    for (const minute of ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55']) {
+      assert.ok(saveBooking(db, 1, { ...input, reservedStart: '16:' + minute }, undefined, now));
+    }
+    for (const minute of ['01', '12', '59']) {
+      assert.throws(() => saveBooking(db, 1, { ...input, reservedStart: '16:' + minute }, undefined, now), /five-minute increments/);
+    }
+  } finally { db.close(); }
+});
 test('booking updates suppress watching; yesterday/tomorrow never watch', () => {
   const db = fixture();
   try {
@@ -39,7 +83,7 @@ test('booking updates suppress watching; yesterday/tomorrow never watch', () => 
     saveBooking(
       db,
       1,
-      { ...input, reservedStart: '15:00', reservedEnd: '16:00' },
+      { ...input, reservedStart: '15:00' },
       id,
       now
     );
@@ -47,7 +91,7 @@ test('booking updates suppress watching; yesterday/tomorrow never watch', () => 
     saveBooking(
       db,
       1,
-      { ...input, reservedStart: '15:30', reservedEnd: '16:30' },
+      { ...input, reservedStart: '15:30' },
       id,
       now
     );
@@ -168,7 +212,7 @@ test('logical alerts deduplicate and editing cancels pending delivery', () => {
     saveBooking(
       db,
       1,
-      { ...input, reservedStart: '15:15', reservedEnd: '16:15' },
+      { ...input, reservedStart: '15:15' },
       id,
       now
     );
@@ -196,19 +240,23 @@ test('push registration cannot target local or arbitrary servers', () => {
     assert.equal(validPushEndpoint(url), false);
 });
 
-test('same-day reservation start permits an end after midnight', () => {
+test('reserved end is derived on create and edit, including midnight rollover', () => {
   const db = fixture();
   try {
     const id = saveBooking(
       db,
       1,
-      { ...input, reservedStart: '23:30', reservedEnd: '00:30' },
+      { ...input, reservedStart: '23:30' },
       undefined,
       now
     );
     const b = db.prepare('SELECT * FROM bookings WHERE id=?').get(id)!;
     assert.equal(Number(b.reserved_end) - Number(b.reserved_start), 3600000);
     assert.equal(b.visit_date, '2026-10-01');
+    assert.equal(b.reserved_end, localInstant('2026-10-02', '00:30'));
+    saveBooking(db, 1, { ...input, reservedStart: '22:00', reservedEnd: '22:15' }, id, now);
+    const updated = db.prepare('SELECT reserved_end FROM bookings WHERE id=?').get(id)!;
+    assert.equal(updated.reserved_end, localInstant('2026-10-01', '23:00'));
   } finally {
     db.close();
   }
