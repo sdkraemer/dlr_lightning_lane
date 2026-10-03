@@ -4,7 +4,8 @@ COPY package*.json ./
 RUN npm ci
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+# Avoid the Turbopack build path when building amd64 images under QEMU on ARM.
+RUN npm run build -- --webpack
 
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app

@@ -1,28 +1,29 @@
-# Build locally and deploy to the droplet
+# Local build and droplet deployment
 
-Run these commands from the repository on your computer. Docker Desktop must be
-running with Linux containers; Node 24 and dependencies (`npm ci`) are required.
-No GitHub CI/CD or container registry is needed.
+Local Docker operation has been confirmed by the user. No droplet was changed;
+production deployment still needs verification. Follow the complete
+[DigitalOcean walkthrough](../README.md#running-on-a-digitalocean-droplet) for
+server setup, image transfer, production configuration, and updates.
 
-## 1. Build a release
+## Build locally
 
-```powershell
-npm run release:build -- --tag 2026-10-03-01
+Install a Docker engine that can build Linux images. Set IMAGE_TAG to a release
+identifier in your local .env. Match the image architecture to the droplet; the
+example below assumes an x86_64 droplet. GitHub Actions is optional.
+
+```sh
+docker buildx build --platform linux/amd64 --load -f deploy/Dockerfile.web -t dlr-web:initial .
+docker buildx build --platform linux/amd64 --load -f deploy/Dockerfile.worker -t dlr-worker:initial .
+mkdir -p data
+docker save -o data/dlr-images.tar dlr-web:initial dlr-worker:initial
+scp data/dlr-images.tar user@droplet:/path/to/app/
 ```
 
-This runs unit tests and TypeScript checks, builds both Linux Docker images (including
-the Next.js production build), and writes `releases/2026-10-03-01/`. The bundle
-contains images, pinned production Compose configuration, Caddy configuration,
-the deployment helper and SHA-256 checksums. Current uncommitted code is included.
-Secrets, SQLite data and release archives are excluded from the Docker context.
-Use a new tag for every build; an existing release directory is never overwritten.
-
-The default platform is `linux/amd64`. For an ARM droplet pass
-`--platform linux/arm64`. Docker Desktop is discovered automatically on Windows;
-`DOCKER_BIN` can override the executable path. Release archives can be large;
-retain enough local and droplet disk space for both old and new images plus a backup.
-
-## 2. Find the existing Compose project
+Copy compose.yaml and deploy/Caddyfile to the droplet, preserving paths. Create a
+production .env there: IMAGE_TAG=initial, APP_DOMAIN=your domain,
+APP_BASE_URL=https://your domain, Auth0 and VAPID settings. Use restrictive file
+permissions and never transfer local test data or credentials in an image.
+Point DNS at the droplet and allow inbound 80/443 plus your restricted SSH access.
 
 On the droplet:
 

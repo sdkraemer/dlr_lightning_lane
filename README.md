@@ -27,104 +27,257 @@ For real Auth0, copy .env.example to .env, configure the Auth0 values and use
 `npm run dev`. Builds work without Auth0 credentials; unauthenticated access
 fails closed until configured. Never commit .env.
 
-## Run locally with Docker
+## Running Docker locally
 
-Install and start Docker Desktop with **Linux containers** and Docker Compose v2.
-Run these PowerShell commands from the repository root. Node and npm are not
-required on the host for this route. Ensure ports 80 and 443 are free.
+These PowerShell commands run the web app, monitoring worker, and Caddy at
+https://localhost using the repository's Docker Compose configuration. Run them
+from the repository root. Docker uses a separate persistent SQLite volume;
+bookings from the normal local development database are not copied automatically.
 
-The existing Compose stack runs the production web app, worker, and Caddy.
-It requires real Auth0 credentials and HTTPS; mock login is only supported by the
-npm development setup above.
+### One-time setup
 
-### Configure local settings
+Install and start Docker Desktop with Linux containers enabled. Ports 80 and 443
+must be available. If `.env` does not exist, copy `.env.example` to `.env`, then
+configure the Auth0 settings and VAPID keys described below. Keep existing VAPID
+keys stable and use a subject such as `mailto:you@example.com`. Docker requires
+real Auth0 configuration; mock authentication is not supported.
 
-Copy the example only if you do not already have a .env file:
+In your Auth0 application's settings, add these entries alongside any existing
+development URLs:
 
-~~~powershell
-if (!(Test-Path .env)) { Copy-Item .env.example .env }
-~~~
+- **Allowed Callback URLs:** `https://localhost/auth/callback`
+- **Allowed Logout URLs:** `https://localhost`
 
-Set these values in .env, along with your AUTH0_DOMAIN, AUTH0_CLIENT_ID,
-AUTH0_CLIENT_SECRET, and AUTH0_SECRET:
+Set the local Docker overrides, build the images, initialize the database, and
+bootstrap the attraction catalog:
 
-~~~dotenv
-APP_DOMAIN=localhost
-APP_BASE_URL=https://localhost
-IMAGE_TAG=local
-DEV_MOCK_AUTH=false
-~~~
+```powershell
+$env:APP_DOMAIN = "localhost"
+$env:APP_BASE_URL = "https://localhost"
+$env:IMAGE_TAG = "local"
 
-In your Auth0 Regular Web Application, add https://localhost/auth/callback to
-Allowed Callback URLs, and https://localhost to Allowed Logout URLs and Allowed
-Web Origins. Keep any existing production URLs.
-
-Build the images, then generate an Auth0 session secret if you do not have one:
-
-~~~powershell
 docker compose build
-docker compose run --rm --no-deps worker node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
-~~~
+docker compose run --rm worker node scripts/init-db.ts
+docker compose run --rm worker node scripts/probe.ts --diagnostic
+docker compose up -d --no-build
+```
 
-Save that output as AUTH0_SECRET in .env. To enable push notifications, generate
-a VAPID pair and copy both printed values into .env; also set VAPID_SUBJECT
-to your contact address, such as mailto:you@example.com:
+Once Caddy is running, copy its local root certificate and trust it for your
+Windows user. This allows the browser to use local HTTPS without certificate
+errors; Caddy inside Docker cannot install the certificate on Windows itself.
+See [Caddy's local HTTPS documentation](https://caddyserver.com/docs/running#local-https-with-docker).
 
-~~~powershell
-docker compose run --rm --no-deps worker node scripts/vapid.mjs
-~~~
+```powershell
+docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt "$env:TEMP\dlr-caddy-root.crt"
+certutil -user -addstore -f Root "$env:TEMP\dlr-caddy-root.crt"
+```
 
-Keep these secrets stable between restarts and never commit .env.
+Restart Edge and open https://localhost. Sign in and enable notifications for this
+address; subscriptions from http://localhost:3000 do not carry over. Certificate
+setup only needs repeating if Caddy's certificate volume is recreated.
 
-### Initialize and start
+### Running after setup
 
-~~~powershell
-docker compose run --rm --no-deps worker node scripts/init-db.ts
-docker compose run --rm --no-deps worker node scripts/probe.ts --diagnostic
-docker compose up -d
+Start Docker Desktop. In each new PowerShell session, set the same overrides
+before running Compose. They override `.env` only for that session, so the normal
+development settings in `.env` can stay unchanged.
+
+```powershell
+$env:APP_DOMAIN = "localhost"
+$env:APP_BASE_URL = "https://localhost"
+$env:IMAGE_TAG = "local"
+
+docker compose up -d --no-build
+```
+
+Open https://localhost. The monitoring worker runs inside Docker; no separate
+`npm run worker` is needed. Docker Desktop and the computer must stay running
+for monitoring and notification delivery.
+
+```powershell
+# Check container status.
 docker compose ps
-~~~
 
-The diagnostic populates the attraction catalog and inspects the live feed once.
-The worker runs in the background and subsequently polls only when an active
-booking needs its target. Do not also start a separate npm worker against this database.
+# Follow logs; Ctrl+C exits the log view without stopping the containers.
+docker compose logs -f --tail 100 web worker caddy
 
-Caddy issues a local HTTPS certificate for localhost. After Caddy starts, trust
-its local root certificate on your Windows account:
-
-~~~powershell
-New-Item -ItemType Directory -Force data | Out-Null
-docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./data/caddy-local-root.crt
-Import-Certificate -FilePath ./data/caddy-local-root.crt -CertStoreLocation Cert:\CurrentUser\Root
-~~~
-
-This adds this local Caddy instance's certificate authority to your account's trusted
-roots. Restart your browser if needed, then open [https://localhost](https://localhost)
-and sign in. If the certificate is not yet available, check the Caddy logs and retry
-after startup. On macOS or Linux, import the same root certificate into your
-system/browser trust store using that platform's certificate tools.
-
-### Everyday commands
-
-~~~powershell
-# Follow logs (Ctrl+C stops following; containers keep running)
-docker compose logs -f web worker caddy
-
-# Rebuild and restart after changing application code
-docker compose up -d --build
-
-# Stop and remove containers while keeping saved data
+# Stop the stack while preserving the database and certificates.
 docker compose down
 
-# Start again using the existing images and saved data
-docker compose up -d
-~~~
+# Rebuild and restart after code changes.
+docker compose up -d --build
+```
 
-There is no source-code hot reload in this production Docker setup; rebuild after
-edits. SQLite is stored in the sqlite-data named Docker volume shared by web and
-worker, separate from the npm setup's ./data/lightning-lane.sqlite. Caddy's
-certificates also persist in named volumes. Do not use **docker compose down -v**
-unless you intend to delete the local database and certificates.
+Avoid `docker compose down -v` unless you intend to delete the stored database
+and certificates. For release migrations and backups, see [deployment](docs/deployment.md).
+
+## Running on a DigitalOcean droplet
+
+Use the same three-container stack tested locally: web, worker, and Caddy. The
+steps below build images on your computer and transfer them to the droplet, so
+the server does not need Node.js, npm, a Git checkout, or a separate database.
+Local Docker operation has been confirmed; deployment to a droplet still needs
+verification.
+
+### One-time server setup
+
+1. Create an **Ubuntu 24.04 LTS, x86_64** droplet. Start with **2 GB RAM and
+   1 vCPU** for this small deployment and check usage after launch. Add your SSH
+   public key when creating it. Follow DigitalOcean's
+   [server setup guide](https://docs.digitalocean.com/products/droplets/getting-started/recommended-droplet-setup/)
+   to create a sudo-capable login user.
+2. Install Docker Engine and the Compose plugin using the official
+   [Ubuntu installation instructions](https://docs.docker.com/engine/install/ubuntu/).
+   The server commands below use `sudo docker`; Docker Desktop is only needed
+   on your local computer.
+3. Point a domain or subdomain, such as `lightning.example.com`, to the droplet's
+   public IPv4 address using a DNS **A record**. Only add an AAAA record if IPv6
+   is configured on the droplet.
+4. Attach a [DigitalOcean Cloud Firewall](https://docs.digitalocean.com/products/networking/firewalls/how-to/create/):
+   allow inbound TCP **22 from your IP**, and **80/443 from the internet**.
+   Keep outbound access enabled for DNS, HTTPS, Auth0, the feed, and push services.
+   Port 3000 does not need to be exposed. Any host firewall must also allow 80/443.
+5. In Auth0, add `https://lightning.example.com/auth/callback` to **Allowed
+   Callback URLs** and `https://lightning.example.com` to **Allowed Logout URLs**.
+   Keep the local URLs if you still develop locally. Keep signup enabled.
+
+Replace `deployuser`, `DROPLET_IP`, and the example domain throughout these steps.
+Connect from your computer:
+
+```powershell
+ssh deployuser@DROPLET_IP
+```
+
+On the droplet, create a stable deployment directory and verify Docker:
+
+```sh
+mkdir -p ~/dlr-lightning-lane/deploy
+cd ~/dlr-lightning-lane
+sudo systemctl enable --now docker
+sudo docker version
+sudo docker compose version
+umask 077
+touch .env
+chmod 600 .env
+nano .env
+```
+
+Fill the server's `.env` with your real settings. It is separate from your local
+`.env`; do not use localhost URLs here or commit secrets to Git.
+
+```dotenv
+IMAGE_TAG=release-1
+APP_DOMAIN=lightning.example.com
+APP_BASE_URL=https://lightning.example.com
+AUTH0_DOMAIN=your-tenant.auth0.com
+AUTH0_CLIENT_ID=your-client-id
+AUTH0_CLIENT_SECRET=your-client-secret
+AUTH0_SECRET=your-stable-random-32-byte-hex-secret
+VAPID_PUBLIC_KEY=your-public-key
+VAPID_PRIVATE_KEY=your-private-key
+VAPID_SUBJECT=mailto:you@example.com
+MONITORING_ENABLED=true
+POLL_INTERVAL_SECONDS=120
+```
+
+Generate a production `AUTH0_SECRET` with `openssl rand -hex 32` on the droplet.
+Use your existing VAPID key pair or generate a production pair once with
+`npm run vapid:generate` locally, then keep it stable across deployments.
+Leave `AUTH0_ALLOWED_SUB` unset for a fresh database. Compose sets the database
+path to its persistent volume automatically.
+
+### Build and deploy from your computer
+
+Run in PowerShell from the repository root with Docker Desktop running. Explicit
+`linux/amd64` builds match the x86_64 droplet even on an ARM computer. The ignored
+`data` directory keeps the image archive out of Git and the Docker build context.
+
+```powershell
+New-Item -ItemType Directory -Force data | Out-Null
+docker buildx build --platform linux/amd64 --load -f deploy/Dockerfile.web -t dlr-web:release-1 .
+docker buildx build --platform linux/amd64 --load -f deploy/Dockerfile.worker -t dlr-worker:release-1 .
+docker save -o data/dlr-images.tar dlr-web:release-1 dlr-worker:release-1
+scp data/dlr-images.tar compose.yaml deployuser@DROPLET_IP:dlr-lightning-lane/
+scp deploy/Caddyfile deployuser@DROPLET_IP:dlr-lightning-lane/deploy/
+```
+
+On the droplet:
+
+```sh
+cd ~/dlr-lightning-lane
+sudo docker load -i dlr-images.tar
+sudo docker compose run --rm worker node scripts/init-db.ts
+sudo docker compose run --rm worker node scripts/probe.ts --diagnostic
+sudo docker compose up -d --no-build
+sudo docker compose ps
+sudo docker compose logs --tail 100 web worker caddy
+```
+
+Check each command succeeds before proceeding. The **diagnostic probe is required
+for a fresh database**: it loads attractions before any bookings exist. Normal
+polling skips without pending same-day watches, so it cannot bootstrap the first
+booking by itself.
+
+Caddy starts with the other services and obtains a public HTTPS certificate once
+DNS and ports 80/443 are working. No local certificate import is needed. Open
+your production URL, verify login/logout, add a booking, and enable notifications
+on each device. Use **Send a test**, then verify an actual target alert. Local
+bookings and notification subscriptions do not automatically carry over.
+
+The droplet keeps monitoring when your computer is off. Keep one worker replica.
+Check `sudo docker stats` for memory use; the Compose service memory limits still
+need validation under your production workload.
+
+### Updates, restarts, and backups
+
+Keep using the same deployment directory so Compose reuses the existing volumes.
+For an ordinary restart or `.env` change, run:
+
+```sh
+cd ~/dlr-lightning-lane
+sudo docker compose up -d --no-build
+```
+
+Before upgrading, create an online SQLite backup in the persistent volume. The
+explicit working directory makes the backup output writable by the container user:
+
+```sh
+sudo docker compose exec -w /data worker node /app/scripts/backup-db.ts
+```
+
+The command prints a path like `/data/data/backups/TIMESTAMP.sqlite`. Substitute
+the actual path below and copy the backup off the droplet before upgrading:
+
+```sh
+sudo docker compose cp worker:/data/data/backups/TIMESTAMP.sqlite ./backup.sqlite
+sudo chown "$(id -u):$(id -g)" backup.sqlite
+chmod 600 backup.sqlite
+```
+
+From your computer, download it to a distinct filename and retain it securely:
+
+```powershell
+scp deployuser@DROPLET_IP:dlr-lightning-lane/backup.sqlite data/droplet-before-release-2.sqlite
+```
+
+Build and transfer new images using a new tag such as `release-2` in the build
+commands above. On the droplet, load the archive, stop the old web/worker, update
+`IMAGE_TAG` in `.env`, migrate using the new image, then start the stack:
+
+```sh
+sudo docker load -i dlr-images.tar
+sudo docker compose stop web worker
+nano .env
+sudo docker compose run --rm worker node scripts/init-db.ts
+sudo docker compose up -d --no-build
+sudo docker compose logs --tail 100 web worker caddy
+```
+
+Do not proceed if migration fails. Keep the previous images and backup available;
+database migrations may require restoring a compatible backup to roll back.
+Arrange regular off-droplet backups and test restoring into a separate volume.
+Avoid `docker compose down -v`, which deletes the database and certificate volumes.
+See [deployment notes](docs/deployment.md) for additional operational checks.
 
 ## What works
 
@@ -139,9 +292,9 @@ unless you intend to delete the local database and certificates.
 - PWA manifest, Android-ready icons, service worker, subscription and test notification.
 - Local Docker build assets for Next.js, worker and Caddy.
 
-Real Auth0 login and physical-device push require credentials/configuration and
-have not been verified against a tenant/device. Docker runtime and the droplet
-are not verified here. Trend prediction and booking eligibility timers are deferred.
+Real Auth0 login and physical-device push require credentials/configuration.
+Local Docker operation has been confirmed; the droplet deployment still needs
+verification. Trend prediction and booking eligibility timers are deferred.
 
 ## Watch rules
 
