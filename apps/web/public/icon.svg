@@ -1,1 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="44" fill="#0079bc"/><path d="M108 25 48 105h40l-8 62 65-87h-41z" fill="#ffffff"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <title>Return Window — outlined ears and lightning bolt</title>
+  <rect width="192" height="192" rx="44" fill="#0079bc"/>
+  <path
+    d="M80.3 67.4A30 30 0 1 0 50.95 90.99A52 52 0 1 0 141.05 90.99A30 30 0 1 0 111.7 67.4A52 52 0 0 0 80.3 67.4Z"
+    fill="none" stroke="#a8dcf3" stroke-width="4" stroke-linejoin="round"
+  />
+  <path d="M108 25 48 105h40l-8 62 65-87h-41z" fill="#fff" stroke="#0079bc" stroke-width="3" stroke-linejoin="round"/>
+</svg>

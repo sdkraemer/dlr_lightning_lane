@@ -120,15 +120,11 @@ h2 {
   gap: 10px;
 }
 .bolt {
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--blue);
-  color: var(--blue);
+  background: url('/icon.svg') center / contain no-repeat;
+  flex-shrink: 0;
+  display: block;
   height: 32px;
   width: 32px;
-  border-radius: 50%;
-  font-size: 27px;
-  line-height: 1;
 }
 .account {
   font-size: 13px;
@@ -271,20 +267,41 @@ h2 {
 .offered strong {
   color: var(--blue);
 }
-.target {
+.desired-window {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.target-forecast {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  background: var(--tint);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.forecast-result {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 6px 12px;
-  padding: 10px 12px;
-  background: var(--tint);
-  border-radius: 4px;
+  gap: 4px 10px;
 }
-.target strong {
-  font-size: 14px;
+.forecast-result strong {
+  font-size: 23px;
   font-weight: 600;
   color: var(--heading);
+}
+.forecast-result span {
+  font-size: 12px;
+  font-weight: 600;
+}
+.target-forecast small {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
 }
 .card-meta {
   display: flex;

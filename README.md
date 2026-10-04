@@ -307,13 +307,30 @@ See [deployment notes](docs/deployment.md) for additional operational checks.
 
 Real Auth0 login and physical-device push require credentials/configuration.
 Local Docker operation has been confirmed; the droplet deployment still needs
-verification. Trend prediction and booking eligibility timers are deferred.
+verification. Booking eligibility timers are deferred.
 
 ## Watch rules
 
+Target status and alerts use **Latest observed**, the farthest valid return start
+recorded today, so temporary backward offers do not reverse progress. A maximum
+inside the desired range shows **Target reached**; beyond it shows **Target passed**.
+Notifications still require fresh, available data from an operating attraction.
+
+The booking card keeps your booking, standby wait, current offer, latest observed,
+and **Desired Window** together. A separate **Estimated time until window** panel
+compares the last 30 and 60 minutes of latest-observed history. It shows a range
+based on those two rates, with a Picking up / Steady / Slowing down pace label.
+The pace compares consecutive half-hours; a single dominant jump waits for more
+evidence. Short history is labeled Building trend with its actual coverage.
+It needs at least ten minutes of observations; flat, missing, or stale data shows
+an explanation instead of an ETA. The range represents different pace scenarios,
+not a statistical confidence interval.
+The estimate disappears once Latest observed reaches or passes the desired window.
+It is approximate and never triggers alerts by itself.
+
 All times are Pacific (America/Los_Angeles). Only today's visit date is eligible.
 A target is an inclusive range of acceptable return-window START times. The default
-early-warning margin is 15 minutes on either side. Unknown/unavailable, down,
+early-warning margin is 15 minutes before the window. Unknown/unavailable, down,
 invalid, expired and stale offers do not trigger alerts.
 
 A reserved start already inside its target stops polling/alerts for that booking.

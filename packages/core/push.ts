@@ -3,7 +3,7 @@ import webpush from 'web-push';
 import type { DatabaseSync } from 'node:sqlite';
 import { eligibleWhere } from '../db/index.ts';
 import { parkDate } from './time.ts';
-import { latestOffer, phaseFor } from './alerts.ts';
+import { latestObservedOffer, phaseFor } from './alerts.ts';
 export function pushReady() {
   return vapidConfiguration().configured;
 }
@@ -63,7 +63,7 @@ export async function deliverAlerts(
       .prepare('SELECT * FROM bookings WHERE id=? AND ' + eligibleWhere)
       .get(j.booking_id, parkDate(current));
     const offer = b
-      ? latestOffer(db, String(b.attraction_id), String(b.queue_type))
+      ? latestObservedOffer(db, String(b.attraction_id), String(b.queue_type), current)
       : undefined;
     const phase = b
       ? phaseFor(
@@ -104,11 +104,11 @@ export async function deliverAlerts(
         {
           title:
             j.phase === 'reached'
-              ? 'Your target window is available'
+              ? 'Latest observed reached your target'
               : 'Your target window is close',
           body:
             String(attraction?.name) +
-            ': offered start ' +
+            ': latest observed start ' +
             time +
             ' Pacific. Check Disneyland to modify.',
           tag:

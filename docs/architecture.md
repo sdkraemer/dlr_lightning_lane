@@ -23,14 +23,18 @@ Next.js builds; the worker uses Node 24's direct TypeScript execution.
 3. When an eligible watch exists, the worker polls both parks every 60–120 seconds
    (120 default, measured after completion). All attraction/queue observations are
    retained, not only watched rides.
-4. Evaluate AVAILABLE RETURN_TIME windows on OPERATING rides using observations
-   fetched within five minutes. Windows must parse, not be expired, and start on
+4. Evaluate the daily latest observed (maximum) AVAILABLE RETURN_TIME window,
+   with a current AVAILABLE observation on an OPERATING ride fetched within five
+   minutes required for notifications. Windows must parse, not be expired, and start on
    today's Pacific date or in the next-day portion of the target range. An available window whose start has just passed can still
    qualify while its end is in the future.
-5. A start inside the target range creates a reached event; outside but within
-   the configured margin (15 minutes default, either side) creates approaching.
+5. A latest observed start inside the target range creates a reached event;
+   below the range but within the configured margin (15 minutes default) creates
+   approaching. A maximum beyond the upper bound displays Target passed and
+   does not trigger either notification. Backward offers do not reverse progress.
 6. Persist deduplicated events and per-device delivery jobs. The sender rechecks
-   booking revision, eligibility and the latest offer before each attempt.
+   booking revision, eligibility, latest observed maximum and current feed health
+   before each attempt. Event observation IDs reference the actual maximum.
 7. The user modifies the booking in Disneyland and updates the reserved window
    here. A reserved start inside the range suppresses future watches/alerts.
 
@@ -350,4 +354,35 @@ Migration 004 adds the shared park schedule cache.
 
 ## Farthest offered return start
 
-The dashboard derives farthestOffer from persisted queue observations for each attraction and queue type, using observations fetched since Pacific midnight through now. It selects the maximum valid AVAILABLE return start by instant and shows when it was seen. Earlier offers and unavailable responses do not lower this historical maximum. Late-night return starts on the following calendar date are supported. The maximum resets with the observation date and survives worker restarts and booking edits because history is durable. It includes observations collected before the booking was added. No table or migration is needed. Alerts continue to use the current offer only. This is the farthest value captured during enabled monitoring, not a claim about unobserved offers or evidence of cancellation.
+The dashboard derives farthestOffer (Latest observed) from persisted queue observations for each attraction and queue type, using observations fetched since Pacific midnight through now. It selects the maximum valid AVAILABLE return start on an OPERATING ride by instant and shows when it was last seen. Earlier offers and unavailable responses do not lower this historical maximum. Late-night return starts on the following calendar date are supported. The maximum resets with the observation date and survives worker restarts and booking edits because history is durable. It includes observations collected before the booking was added. No table or migration is needed. Dashboard target progress and notifications use this maximum. Reached/passed dashboard states remain historical facts during a feed outage; current-offer freshness is shown separately, and notifications still require fresh available data. This is the farthest value captured during enabled monitoring, not a claim about unobserved offers or evidence of cancellation.
+
+## Desired-start estimate
+
+The forecast fits least-squares lines to cumulative daily maxima at valid
+observation times during the last 30 and 60 minutes. Lower offers become flat samples,
+not negative movement. The maximum before the hour is carried into subsequent
+samples; a sample within five minutes before the boundary can anchor its start.
+At least three distinct sample times spanning ten minutes are required, with no
+gap over ten minutes and a valid available observation in the last five minutes.
+The rate is return-time minutes per real minute. Each ETA is now plus
+(desired earliest start - daily maximum) / rate. The displayed range spans those
+two scenarios, rounded outward to five minutes; it is not a calibrated confidence
+interval. Clock arrival bounds are rounded to five minutes. The 30-minute rate
+needs at least 25 minutes of coverage to be labeled as such; before the broad
+window has 55 minutes, its actual span is shown rather than a 60-minute label.
+
+Pace compares the last half-hour against the preceding half-hour, requiring at
+least 20 minutes and three samples in each. Picking up / Slowing down requires a
+change larger than both 25% of the previous rate and 10 return-time minutes per
+hour. Otherwise the pace is Steady; insufficient comparison coverage is Building
+trend. A recent fit with fewer than two advances, or one jump accounting for more
+than 75% of its increase, shows Rechecking the pace instead of a numeric forecast.
+A flat recent window suppresses the ETA even if the full-hour rate is positive.
+
+Sparse history, stale/unavailable data, a flat trend, and a forecast beyond the
+desired window's end (by either rate) get explanatory text instead of a numeric ETA. The forecast
+is hidden when the maximum reaches or passes the earliest target, for paused or
+completed bookings, when the reservation is already in target, or when monitoring
+is disabled. A forecast never creates an alert. Polling eligibility is unchanged:
+observation continues until the user changes/pauses/completes the booking or
+monitoring is disabled, and the date still resets at Pacific midnight.

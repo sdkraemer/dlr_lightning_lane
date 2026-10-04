@@ -1,8 +1,9 @@
-import { farthestOfferToday } from './offer-history.ts';
+import { offerHistoryToday, targetProgress } from './offer-history.ts';
+import { estimateTarget } from './offer-trend.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { eligibleWhere } from '../db/index.ts';
 import { parkDate } from './time.ts';
-import { latestOffer, phaseFor, MAX_OBSERVATION_AGE } from './alerts.ts';
+import { latestOffer, MAX_OBSERVATION_AGE } from './alerts.ts';
 import { bookingAttractions } from './attractions.ts';
 import { parkHours } from './park-hours.ts';
 import { PARKS } from '../themeparks/index.ts';
@@ -20,6 +21,12 @@ export function dashboard(db: DatabaseSync, userId: number, now = Date.now()) {
         String(b.attraction_id),
         String(b.queue_type)
       );
+      const history = offerHistoryToday(db, String(b.attraction_id), String(b.queue_type), now);
+      const progress = history.farthest && b.target_earliest_start !== null
+        ? targetProgress(Date.parse(history.farthest.return_start),
+            Number(b.target_earliest_start), Number(b.target_latest_start),
+            Number(b.early_threshold_minutes))
+        : null;
       let displayState = 'Waiting';
       if (b.watch_state === 'completed') displayState = 'Completed';
       else if (b.watch_state === 'paused') displayState = 'Paused';
@@ -29,24 +36,17 @@ export function dashboard(db: DatabaseSync, userId: number, now = Date.now()) {
         Number(b.reserved_start) <= Number(b.target_latest_start)
       )
         displayState = 'Booking in target';
-      else if (!offer || now - offer.observed_at > MAX_OBSERVATION_AGE)
+      else if (progress === 'reached') displayState = 'Target reached';
+      else if (progress === 'passed') displayState = 'Target passed';
+      else if (!offer || offer.observed_at > now || now - offer.observed_at > MAX_OBSERVATION_AGE)
         displayState = 'Awaiting fresh data';
-      else {
-        const phase = phaseFor(
-          offer,
-          Number(b.target_earliest_start),
-          Number(b.target_latest_start),
-          Number(b.early_threshold_minutes),
-          now
-        );
-        displayState =
-          phase === 'reached'
-            ? 'Target reached'
-            : phase === 'approaching'
-              ? 'Watch'
-              : 'Waiting';
-      }
-      return { ...b, offer: offer ?? null, farthestOffer: farthestOfferToday(db, String(b.attraction_id), String(b.queue_type), now), displayState };
+      else if (progress === 'approaching') displayState = 'Watch';
+      const estimate = b.target_earliest_start !== null &&
+        b.watch_state !== 'paused' && b.watch_state !== 'completed' &&
+        displayState !== 'Booking in target' && process.env.MONITORING_ENABLED !== 'false'
+          ? estimateTarget(history, offer, Number(b.target_earliest_start), Number(b.target_latest_start), now)
+          : null;
+      return { ...b, offer: offer ?? null, farthestOffer: history.farthest, displayState, estimate };
     });
   return {
     date,

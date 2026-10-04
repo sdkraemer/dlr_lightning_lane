@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { eligibleWhere } from '../db/index.ts';
 import { parkDate, nextDate } from './time.ts';
+import { farthestOfferToday, targetProgress } from './offer-history.ts';
 export const MAX_OBSERVATION_AGE = 5 * 60_000;
 export type Offer = {
   observed_at: number;
@@ -38,10 +39,8 @@ export function phaseFor(
         (parkDate(earliest) === parkDate(start) || parkDate(latest) === parkDate(start))))
   )
     return null;
-  if (start >= earliest && start <= latest) return 'reached';
-  if (start >= earliest - margin * 60_000 && start <= latest + margin * 60_000)
-    return 'approaching';
-  return null;
+  const progress = targetProgress(start, earliest, latest, margin);
+  return progress === 'passed' ? null : progress;
 }
 export function latestOffer(
   db: DatabaseSync,
@@ -63,6 +62,29 @@ export function latestOffer(
       })
     | undefined;
 }
+// Use the historical high-water mark for progress, but gate notifications on
+// the current feed's freshness, attraction status, and queue availability.
+export function latestObservedOffer(
+  db: DatabaseSync,
+  attractionId: string,
+  queueType = 'RETURN_TIME',
+  now = Date.now()
+) {
+  const current = latestOffer(db, attractionId, queueType);
+  const farthest = farthestOfferToday(db, attractionId, queueType, now);
+  if (!current?.return_start || !current.return_end ||
+      !Number.isFinite(Date.parse(current.return_start)) ||
+      !Number.isFinite(Date.parse(current.return_end)) ||
+      Date.parse(current.return_end) < Date.parse(current.return_start) ||
+      Date.parse(current.return_end) <= now) return undefined;
+  return current && farthest ? {
+    ...current,
+    id: farthest.id,
+    return_start: farthest.return_start,
+    return_end: farthest.return_end,
+  } : undefined;
+}
+
 export function evaluateAlerts(db: DatabaseSync, now = Date.now()) {
   if (process.env.MONITORING_ENABLED === 'false') return;
   db.exec('BEGIN IMMEDIATE');
@@ -71,10 +93,11 @@ export function evaluateAlerts(db: DatabaseSync, now = Date.now()) {
       .prepare('SELECT * FROM bookings WHERE ' + eligibleWhere)
       .all(parkDate(now));
     for (const b of bookings) {
-      const offer = latestOffer(
+      const offer = latestObservedOffer(
         db,
         String(b.attraction_id),
-        String(b.queue_type)
+        String(b.queue_type),
+        now
       );
       const phase = phaseFor(
         offer,

@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import type { TargetEstimate } from '../../../packages/core/offer-trend.ts';
 
 type Attraction = {
   id: string;
@@ -35,6 +36,7 @@ type Booking = {
   early_threshold_minutes: number;
   watch_state: string;
   displayState: string;
+  estimate: TargetEstimate | null;
   offer: Offer | null;
   farthestOffer: { return_start: string; return_end: string; observed_at: number } | null;
 };
@@ -180,6 +182,45 @@ function TimePicker({
         </select>
       </label>
     </div>
+  );
+}
+
+function TargetForecast({ estimate, stale }: { estimate: TargetEstimate; stale: boolean }) {
+  const heading = <span className="label">Estimated time until window</span>;
+  if (stale || estimate.status !== 'estimate') {
+    const messages = {
+      insufficient_data: 'Gathering data · needs at least 10 min of observations.',
+      not_advancing: 'Latest observed is not advancing yet.',
+      unavailable: 'Estimate paused · return times are unavailable.',
+      too_slow: 'At this pace, the desired window may pass before it is reached.',
+      recent_jump: 'Rechecking the pace after a large jump.',
+      stale: 'Waiting for fresh data.',
+    };
+    return <section className="target-forecast" aria-label="Window estimate">
+      {heading}<span>{stale ? messages.stale : messages[estimate.status as keyof typeof messages]}</span>
+    </section>;
+  }
+  const duration = (minutes: number) => minutes < 60
+    ? minutes + ' min'
+    : Math.floor(minutes / 60) + ' hr' + (minutes % 60 ? ' ' + minutes % 60 + ' min' : '');
+  const low = Math.max(0, Math.floor((estimate.minutesLow + 1e-7) / 5) * 5);
+  const high = Math.max(5, Math.ceil((estimate.minutesHigh - 1e-7) / 5) * 5);
+  const wait = high <= 5 ? 'Within ~5 min' : low === high ? '~' + duration(high)
+    : '~' + (high < 60 ? low + '–' + high + ' min' : duration(low) + '–' + duration(high));
+  const first = time(Math.round(estimate.reachesAtLow / 300_000) * 300_000);
+  const last = time(Math.round(estimate.reachesAtHigh / 300_000) * 300_000);
+  const rate = (value: number) => value > 0 && value < 0.5 ? '<1 min' : duration(Math.round(value));
+  const trend = estimate.trend;
+  return (
+    <section className="target-forecast" aria-label="Window estimate">
+      {heading}
+      <div className="forecast-result"><strong>{wait}</strong><span>{trend.pace}</span></div>
+      <span>Around {first}{first !== last ? '–' + last : ''}</span>
+      <small>
+        {trend.rate30PerHour !== null && <>30m: {rate(trend.rate30PerHour)}/hr · </>}
+        {trend.sampledMinutes >= 55 ? '60m' : Math.round(trend.sampledMinutes) + 'm so far'}: {rate(trend.rate60PerHour)}/hr
+      </small>
+    </section>
   );
 }
 
@@ -369,9 +410,7 @@ export default function Dashboard({ mock }: { mock: boolean }) {
     <main className="shell">
       <header className="masthead">
         <a href="/" className="brand">
-          <span className="bolt" aria-hidden="true">
-            ϟ
-          </span>{' '}
+          <span className="bolt" aria-hidden="true" />{' '}
           RETURN WINDOW
         </a>
         <div className="account">
@@ -644,30 +683,24 @@ export default function Dashboard({ mock }: { mock: boolean }) {
                   <h3>{b.name}</h3>
                   <div className="window-grid">
                     <div>
-                      <span className="label">Your booking</span>
+                      <span className="label">Your Booking</span>
                       <strong>{time(b.reserved_start)}</strong>
-                      <small>until {time(b.reserved_end)}</small>
                     </div>
                     <div className="offered">
                       <span className="label">
-                        {stale ? 'Last offered' : 'Currently offered'}
+                        {stale ? 'Last offered' : 'Currently Offered'}
                       </span>
                       <strong>
                         {available ? time(b.offer!.return_start) : '—'}
                       </strong>
-                      <small>
-                        {available
-                          ? 'until ' + time(b.offer!.return_end)
-                          : b.offer?.state === 'FINISHED'
-                            ? 'No return window available'
-                            : 'Return time unavailable'}
-                      </small>
+                      {!available && <small>{b.offer?.state === 'FINISHED'
+                        ? 'No return window available' : 'Return time unavailable'}</small>}
                     </div>
                     <div className="latest-observed">
-                      <span className="label">Latest observed</span>
+                      <span className="label">Latest Observed</span>
                       <strong>{b.farthestOffer ? time(b.farthestOffer.return_start) : '—'}</strong>
                       <small>{b.farthestOffer
-                        ? 'Today · seen at ' + time(b.farthestOffer.observed_at)
+                        ? 'Seen at ' + time(b.farthestOffer.observed_at)
                         : 'No available return window recorded today'}</small>
                       {available && !stale && b.farthestOffer &&
                         Date.parse(b.offer!.return_start!) < Date.parse(b.farthestOffer.return_start) &&
@@ -683,9 +716,8 @@ export default function Dashboard({ mock }: { mock: boolean }) {
                           : b.offer.standby_wait + ' min'}
                       </strong>
                     </div>
-                  </div>
-                  <div className="target">
-                    <span className="label">Desired start</span>
+                    <div className="desired-window">
+                    <span className="label">Desired Window</span>
                     <strong>
                       {b.target_earliest_start !== null
                         ? time(b.target_earliest_start) +
@@ -693,7 +725,9 @@ export default function Dashboard({ mock }: { mock: boolean }) {
                           time(b.target_latest_start)
                         : 'Not set'}
                     </strong>
+                    </div>
                   </div>
+                  {b.estimate && <TargetForecast estimate={b.estimate} stale={stale} />}
                   <div className="card-meta">
                     <span>
                       {b.offer?.status?.replaceAll('_', ' ') ??
