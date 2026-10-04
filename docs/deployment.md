@@ -19,8 +19,10 @@ docker save -o data/dlr-images.tar dlr-web:initial dlr-worker:initial
 scp data/dlr-images.tar user@droplet:/path/to/app/
 ```
 
-Copy compose.yaml and deploy/Caddyfile to the droplet, preserving paths. Create a
-production .env there: IMAGE_TAG=initial, APP_DOMAIN=your domain,
+Copy compose.yaml and deploy/Caddyfile to the droplet, preserving paths. Leave out
+compose.override.yaml, which is only for localhost.
+If using a full checkout, pass `-f compose.yaml` to all production Compose commands.
+Create a production .env there: IMAGE_TAG=initial, APP_DOMAIN=your domain,
 APP_BASE_URL=https://your domain, Auth0 and VAPID settings. Use restrictive file
 permissions and never transfer local test data or credentials in an image.
 Point DNS at the droplet and allow inbound 80/443 plus your restricted SSH access.

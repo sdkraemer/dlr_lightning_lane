@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { cpSync, copyFileSync } from 'node:fs';
 import { loadEnvFile } from 'node:process';
+import { runServices } from './services.mjs';
 try {
   loadEnvFile('.env');
 } catch (e) {
@@ -12,7 +13,8 @@ process.env.DATABASE_PATH = resolve(
   process.env.DATABASE_PATH || './data/lightning-lane.sqlite'
 );
 const mode = process.argv[2];
-const args = process.argv.slice(3);
+const withWorker = process.argv.includes('--with-worker');
+const args = process.argv.slice(3).filter(arg => arg !== '--with-worker');
 if (args.includes('--mock')) process.env.DEV_MOCK_AUTH = 'true';
 if (!['dev', 'build', 'start'].includes(mode))
   throw new Error('Unknown web command');
@@ -40,8 +42,15 @@ if (mode === 'start') {
     ...args.filter((arg) => arg !== '--mock'),
   ];
 }
-const child = spawn(process.execPath, command, {
-  stdio: 'inherit',
-  env: process.env,
-});
-child.on('exit', (code) => process.exit(code ?? 1));
+if (withWorker && mode !== 'build') {
+  process.exitCode = await runServices([
+    { name: 'Next.js', args: command },
+    { name: 'monitoring worker', args: ['apps/worker/src/main.ts'] },
+  ]);
+} else {
+  const child = spawn(process.execPath, command, {
+    stdio: 'inherit',
+    env: process.env,
+  });
+  child.on('exit', (code) => process.exit(code ?? 1));
+}

@@ -11,6 +11,8 @@ FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000 PROJECT_ROOT=/app DATABASE_PATH=/data/lightning-lane.sqlite
 COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
+# The generated server uses CommonJS, while the root package declares ESM.
+COPY --from=build --chown=node:node /app/apps/web/.next/standalone/apps/web/server.js ./apps/web/server.cjs
 COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build --chown=node:node /app/apps/web/public ./apps/web/public
 COPY --from=build --chown=node:node /app/packages/db ./packages/db

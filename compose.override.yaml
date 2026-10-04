@@ -1,0 +1,12 @@
+# Automatically loaded by Docker Compose for local development.
+# Do not ship this file to the droplet; production uses compose.yaml alone.
+services:
+  web:
+    image: dlr-web:local
+    environment:
+      APP_BASE_URL: https://localhost
+  worker:
+    image: dlr-worker:local
+  caddy:
+    environment:
+      APP_DOMAIN: localhost

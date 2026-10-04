@@ -17,7 +17,11 @@ npm run dev:mock
 
 Open http://localhost:3000. The diagnostic bootstraps the attraction catalog and
 prints every attraction's queues. It is an explicit one-time exception to the
-active-watch polling rule. Run a separate terminal for `npm run worker`.
+active-watch polling rule. `npm run dev` starts Next.js and the monitoring worker
+together, loads `.env` for both, and stops both with Ctrl+C. If either service
+exits unexpectedly, the runner stops the other and exits with an error.
+`npm run dev:mock` remains web-only for isolated preview/browser tests; use a
+separate `npm run worker` only when deliberately testing monitoring in mock mode.
 The browser only reads stored observations; closing the browser does not stop
 the worker. Start a single worker process.
 
@@ -25,7 +29,10 @@ the worker. Start a single worker process.
 It does not change .env. Mock auth is rejected for production builds/start.
 For real Auth0, copy .env.example to .env, configure the Auth0 values and use
 `npm run dev`. Builds work without Auth0 credentials; unauthenticated access
-fails closed until configured. Never commit .env.
+fails closed until configured. Never commit .env. Keep
+`APP_BASE_URL=http://localhost:3000` in your local `.env`; no terminal environment
+overrides are needed. If you previously set `$env:APP_BASE_URL` for Docker, open
+a fresh terminal before running `npm run dev`.
 
 ## Running Docker locally
 
@@ -33,6 +40,10 @@ These PowerShell commands run the web app, monitoring worker, and Caddy at
 https://localhost using the repository's Docker Compose configuration. Run them
 from the repository root. Docker uses a separate persistent SQLite volume;
 bookings from the normal local development database are not copied automatically.
+Compose automatically loads `compose.override.yaml`, which sets the local images,
+`APP_BASE_URL=https://localhost`, and `APP_DOMAIN=localhost`. Auth0 and VAPID
+credentials still come from `.env`. This lets npm development and Docker use
+different URLs without editing `.env` or setting terminal variables.
 
 ### One-time setup
 
@@ -48,14 +59,10 @@ development URLs:
 - **Allowed Callback URLs:** `https://localhost/auth/callback`
 - **Allowed Logout URLs:** `https://localhost`
 
-Set the local Docker overrides, build the images, initialize the database, and
+Build the images, initialize the database, and
 bootstrap the attraction catalog:
 
 ```powershell
-$env:APP_DOMAIN = "localhost"
-$env:APP_BASE_URL = "https://localhost"
-$env:IMAGE_TAG = "local"
-
 docker compose build
 docker compose run --rm worker node scripts/init-db.ts
 docker compose run --rm worker node scripts/probe.ts --diagnostic
@@ -78,21 +85,21 @@ setup only needs repeating if Caddy's certificate volume is recreated.
 
 ### Running after setup
 
-Start Docker Desktop. In each new PowerShell session, set the same overrides
-before running Compose. They override `.env` only for that session, so the normal
-development settings in `.env` can stay unchanged.
+Start Docker Desktop and run from the repository root. Local settings are saved
+in `compose.override.yaml`, so no PowerShell environment variables are needed.
 
 ```powershell
-$env:APP_DOMAIN = "localhost"
-$env:APP_BASE_URL = "https://localhost"
-$env:IMAGE_TAG = "local"
-
-docker compose up -d --no-build
+npm run docker:up
 ```
 
 Open https://localhost. The monitoring worker runs inside Docker; no separate
 `npm run worker` is needed. Docker Desktop and the computer must stay running
 for monitoring and notification delivery.
+`npm run docker:up` builds and starts web, worker, and Caddy in the background
+(equivalent to `docker compose up -d --build`). Use `npm run docker:logs` to
+follow output and `npm run docker:down` to stop all three without deleting data.
+If images are already current, `docker compose up -d --no-build` also starts all
+three. Do not run an additional worker for the same database.
 
 ```powershell
 # Check container status.
@@ -112,6 +119,12 @@ Avoid `docker compose down -v` unless you intend to delete the stored database
 and certificates. For release migrations and backups, see [deployment](docs/deployment.md).
 
 ## Running on a DigitalOcean droplet
+
+Deploy `compose.yaml` alone, as the transfer and release commands below do.
+Do not copy the local `compose.override.yaml` to production. If running from a
+full repository checkout on the droplet, explicitly use
+`docker compose -f compose.yaml` for every production Compose command to skip
+the automatically loaded local override.
 
 Use the same three-container stack tested locally: web, worker, and Caddy. The
 steps below build images on your computer and transfer them to the droplet, so
@@ -322,7 +335,11 @@ No authenticated API/page data is cached offline.
 | Command                       | Purpose                                            |
 | ----------------------------- | -------------------------------------------------- |
 | npm run dev:mock              | Local dashboard without an Auth0 tenant            |
-| npm run dev                   | Local dashboard using configured Auth0             |
+| npm run dev                   | Next.js and monitoring worker using configured Auth0 |
+| npm run dev:web               | Next.js only, for debugging                         |
+| npm run docker:up             | Build/start web, worker, and Caddy in Docker         |
+| npm run docker:down           | Stop Docker stack and preserve data                 |
+| npm run docker:logs           | Follow Docker service logs                          |
 | npm run worker                | Background polling, evaluation and push delivery   |
 | npm run probe                 | One cycle, subject to watch gating                 |
 | npm run probe -- --diagnostic | One-time catalog/feed inspection                   |
@@ -330,7 +347,8 @@ No authenticated API/page data is cached offline.
 | npm test                      | Domain, persistence and migration tests            |
 | npm run typecheck             | TypeScript validation                              |
 | npm run build                 | Production Next.js build (no credentials required) |
-| npm start                     | Local production server; mock identity prohibited  |
+| npm start                     | Built production server and worker; requires build |
+| npm run start:web             | Built production server only                       |
 
 Browser test: use a fresh isolated DATABASE_PATH, run
 `node scripts/seed-browser-test.ts`, start `npm run dev:mock` with that same path,

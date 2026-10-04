@@ -11,4 +11,4 @@ for (const key of [
     throw new Error('Missing production configuration: ' + key);
 if (new URL(process.env.APP_BASE_URL).protocol !== 'https:')
   throw new Error('Production requires an HTTPS origin.');
-await import('../apps/web/server.js');
+await import('../apps/web/server.cjs');

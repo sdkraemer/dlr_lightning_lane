@@ -6,10 +6,15 @@
     "node": ">=24.0.0 <25"
   },
   "scripts": {
-    "dev": "node scripts/web.mjs dev",
+    "dev": "node scripts/web.mjs dev --with-worker",
+    "dev:web": "node scripts/web.mjs dev",
     "build": "node scripts/web.mjs build",
     "format": "prettier --write .",
-    "start": "node scripts/web.mjs start",
+    "start": "node scripts/web.mjs start --with-worker",
+    "start:web": "node scripts/web.mjs start",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f --tail 100 web worker caddy",
     "typecheck": "tsc --noEmit",
     "db:init": "node --env-file-if-exists=.env scripts/init-db.ts",
     "probe": "node --env-file-if-exists=.env scripts/probe.ts",
