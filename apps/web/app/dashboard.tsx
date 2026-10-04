@@ -527,9 +527,29 @@ export default function Dashboard({ mock }: { mock: boolean }) {
                   slots={timeSlots}
                   label="Earliest"
                   value={form.targetEarliest}
-                  onChange={(targetEarliest) =>
-                    setForm({ ...form, targetEarliest })
-                  }
+                  onChange={(targetEarliest) => {
+                    const earliest = timeSlots.find(
+                      (slot) => slot.value === targetEarliest
+                    );
+                    const latest = earliest
+                      ? timeSlots
+                          .filter(
+                            (slot) =>
+                              slot.instant >= earliest.instant &&
+                              slot.instant <= earliest.instant + 3_600_000
+                          )
+                          .reduce<TimeSlot | undefined>(
+                            (last, slot) =>
+                              !last || slot.instant > last.instant ? slot : last,
+                            undefined
+                          )
+                      : undefined;
+                    setForm((previous) => ({
+                      ...previous,
+                      targetEarliest,
+                      targetLatest: latest?.value ?? '',
+                    }));
+                  }}
                 />
                 <TimePicker
                   slots={timeSlots}
